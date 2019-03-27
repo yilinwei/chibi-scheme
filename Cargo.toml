@@ -3,7 +3,8 @@ name = "chibi-scheme-rs"
 version = "0.1.0"
 authors = ["Yilin <yilin.wei10@gmail.com>"]
 edition = "2018"
-
+repository = "https://github.com/yilinwei/chibi-scheme-rs"
+license = "Apache-2.0"
 [build-dependencies]
 bindgen = "0.48.1"
 
