@@ -1,12 +1,11 @@
 [package]
-name = "chibi-scheme-sys"
+name = "chibi-scheme"
 version = "0.1.0"
 authors = ["Yilin <yilin.wei10@gmail.com>"]
 edition = "2018"
-repository = "https://github.com/yilinwei/chibi-scheme-rs"
+repository = "https://github.com/yilinwei/chibi-scheme"
 description = "Rust bindings to chibi-scheme"
 license = "Apache-2.0"
-[build-dependencies]
-bindgen = "0.48.1"
 
 [dependencies]
+chibi-scheme-sys = { path = "chibi-scheme-sys" }
