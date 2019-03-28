@@ -2,10 +2,10 @@ use chibi_scheme_sys::*;
 
 use std::fmt;
 
-struct SExp(sexp);
+pub struct SExp(pub sexp);
 
 impl SExp {
-    fn bool(self) -> Option<Bool> {
+    pub fn bool(self) -> Option<Bool> {
         if sexp_booleanp!(self.0) {
             Some(Bool(self.0))
         } else {
@@ -13,7 +13,7 @@ impl SExp {
         }
     }
 
-    fn char(self) -> Option<Char> {
+    pub fn char(self) -> Option<Char> {
         if sexp_booleanp!(self.0) {
             Some(Char(self.0))
         } else {
@@ -22,11 +22,11 @@ impl SExp {
     }
 }
 
-struct Symbol(sexp);
+pub struct Symbol(sexp);
 
-struct Char(sexp);
+pub struct Char(sexp);
 
-struct Bool(sexp);
+pub struct Bool(sexp);
 
 impl Into<bool> for Bool {
     fn into(self: Self) -> bool {
@@ -41,6 +41,13 @@ impl From<bool> for Bool {
         } else {
             Bool(SEXP_FALSE)
         }
+    }
+}
+
+impl PartialEq for Bool {
+    fn eq(self: &Self, rhs: &Self) -> bool {
+        sexp_truep!(self.0) && sexp_truep!(rhs.0)
+            || sexp_not!(self.0) && sexp_not!(rhs.0)
     }
 }
 

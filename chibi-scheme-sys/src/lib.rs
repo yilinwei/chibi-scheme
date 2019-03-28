@@ -69,7 +69,7 @@ macro_rules! sexp_isymbolp {
 #[macro_export]
 macro_rules! sexp_charp {
     ($x: expr) => {
-        (($x as sexp_uint_t) & SEXP_EXTENDED_MASK) == SEXP_CHAR_TAG.into()
+        (($x as sexp_uint_t) & SEXP_EXTENDED_MASK) == SEXP_CHAR_TAG
     };
 }
 
@@ -78,22 +78,4 @@ macro_rules! sexp_booleanp {
     ($x: expr) => {
         (($x) == SEXP_TRUE) || (($x) == SEXP_FALSE)
     }
-}
-
-fn eval(expr: *const i8) -> sexp {
-    unsafe {
-        let ctx = sexp_make_eval_context(
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            0,
-            0,
-        );
-        sexp_eval_string(ctx, expr, -1, std::ptr::null_mut())
-    }
-}
-
-#[test]
-fn test_unbox_fixnum() {
-    assert_eq!(10, sexp_unbox_fixnum!(eval(i8_cstring!("(+ 3 7)"))))
 }
