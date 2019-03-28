@@ -12,6 +12,14 @@ impl SExp {
             None
         }
     }
+
+    fn char(self) -> Option<Char> {
+        if sexp_booleanp!(self.0) {
+            Some(Char(self.0))
+        } else {
+            None
+        }
+    }
 }
 
 struct Symbol(sexp);

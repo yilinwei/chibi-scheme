@@ -78,7 +78,7 @@ fn main() {
         .expect("Could not write bindings");
 
     println!(
-        "cargo:rustc-link-search=native={}/chibi-scheme/libchibi-scheme.so",
+        "cargo:rustc-link-search=native={}/chibi-scheme/",
         &out_dir
     );
     println!("cargo:rustc-link-lib=chibi-scheme");

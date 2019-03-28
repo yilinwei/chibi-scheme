@@ -69,7 +69,7 @@ macro_rules! sexp_isymbolp {
 #[macro_export]
 macro_rules! sexp_charp {
     ($x: expr) => {
-        (($x as sexp_uint_t) & SEXP_EXTENDED_MASK) == SEXP_CHAR_TAG as u64
+        (($x as sexp_uint_t) & SEXP_EXTENDED_MASK) == SEXP_CHAR_TAG.into()
     };
 }
 
