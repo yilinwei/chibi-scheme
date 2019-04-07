@@ -3,5 +3,5 @@ rust:
   - stable
   - nightly
 script:
-  - RUSTFLAGS=-Awarnings && cargo build
+  - cargo build 2>/dev/null
   - cargo test
