@@ -65,11 +65,17 @@ fn main() {
             "FP_SUBNORMAL".into(),
             "FP_ZERO".into(),
             "IPPORT_RESERVED".into(),
+            "FP_INT_UPWARD".into(),
+            "FP_INT_DOWNWARD".into(),
+            "FP_INT_TOWARDZERO".into(),
+            "FP_INT_TONEARESTFROMZERO".into(),
+            "FP_INT_TONEAREST".into()
         ].into_iter()
         .collect(),
     );
     let bindings = bindgen::Builder::default()
         .header(format!("{}/chibi-scheme/include/chibi/eval.h", &out_dir))
+        .clang_arg(format!("-I/{}/chibi-scheme/include", &out_dir))
         .parse_callbacks(Box::new(ignored_macros))
         .generate()
         .expect("Unable to generate bindings");
