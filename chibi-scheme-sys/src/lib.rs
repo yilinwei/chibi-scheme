@@ -5,6 +5,7 @@
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::os::raw;
+use std::ptr;
 
 const fn sexp_make_immediate(n: u32) -> sexp {
     ((n << SEXP_EXTENDED_BITS) + SEXP_EXTENDED_TAG) as sexp
@@ -71,6 +72,26 @@ pub fn sexp_check_tag(x: sexp, t: sexp_tag_t) -> bool {
 
 pub fn sexp_stringp(x: sexp) -> bool {
     sexp_check_tag(x, sexp_types_SEXP_STRING)
+}
+
+pub fn sexp_pairp(x: sexp) -> bool {
+    sexp_check_tag(x, sexp_types_SEXP_PAIR)
+}
+
+pub fn sexp_cons(ctx: sexp, a: sexp, b: sexp) -> sexp {
+    unsafe { sexp_cons_op(ctx, ptr::null_mut(), 2, a, b) }
+}
+
+pub fn sexp_listp(ctx: sexp, x: sexp) -> sexp {
+    unsafe { sexp_listp_op(ctx, ptr::null_mut(), 1, x) }
+}
+
+pub fn sexp_car(x: sexp) -> sexp {
+    unsafe { (*x).value.pair.as_ref().car }
+}
+
+pub fn sexp_cdr(x: sexp) -> sexp {
+    unsafe { (*x).value.pair.as_ref().cdr }
 }
 
 pub fn sexp_string_size(x: sexp) -> sexp_uint_t {
