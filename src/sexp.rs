@@ -1,6 +1,7 @@
 use chibi_scheme_sys::*;
 
 use std::fmt;
+use std::os::raw;
 
 pub struct SExp(pub sexp);
 
@@ -14,7 +15,7 @@ impl SExp {
     }
 
     pub fn char(self) -> Option<Char> {
-        if sexp_booleanp!(self.0) {
+        if sexp_charp!(self.0) {
             Some(Char(self.0))
         } else {
             None
@@ -25,6 +26,33 @@ impl SExp {
 pub struct Symbol(sexp);
 
 pub struct Char(sexp);
+
+impl Into<char> for Char {
+    fn into(self: Self) -> char {
+        //TODO: Need to check casting
+        (sexp_unbox_character!(self.0) as u8) as char
+    }
+}
+
+impl From<char> for Char {
+    fn from(c: char) -> Char {
+        //TODO: safety first -
+        Char(sexp_make_character!(c as raw::c_char))
+    }
+}
+
+impl fmt::Debug for Char {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt.write_str(&format!("#\\{}", sexp_unbox_character!(self.0 as u8)))
+    }
+}
+
+impl PartialEq for Char {
+    fn eq(self: &Self, rhs: &Self) -> bool {
+        sexp_unbox_character!(self.0 as u8) ==
+            sexp_unbox_character!(rhs.0 as u8)
+    }
+}
 
 pub struct Bool(sexp);
 

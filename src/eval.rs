@@ -32,5 +32,13 @@ mod tests {
         let mut context = Context::default();
         assert_eq!(context.eval_string("#t").unwrap().bool(), Some(true.into()));
         assert_eq!(context.eval_string("#f").unwrap().bool(), Some(false.into()));
+        assert_eq!(context.eval_string("#t").unwrap().char(), None);
+    }
+
+    #[test]
+    fn test_char() {
+        let mut context = Context::default();
+        assert_eq!(context.eval_string("#\\s").unwrap().bool(), None);
+        assert_eq!(context.eval_string("#\\h").unwrap().char(), Some('h'.into()))
     }
 }

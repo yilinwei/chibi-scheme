@@ -25,6 +25,20 @@ macro_rules! sexp_unbox_fixnum {
     };
 }
 
+#[macro_export]
+macro_rules! sexp_make_character {
+    ($n: expr) => {
+        ((($n as sexp_sint_t) << SEXP_EXTENDED_BITS) + (SEXP_CHAR_TAG as sexp_sint_t)) as sexp
+    }
+}
+
+#[macro_export]
+macro_rules! sexp_unbox_character {
+    ($n: expr) => {
+        (($n as sexp_sint_t) >> SEXP_EXTENDED_BITS) as std::os::raw::c_char
+    }
+}
+
 pub const SEXP_FALSE: sexp = sexp_make_immediate!(0);
 pub const SEXP_TRUE: sexp = sexp_make_immediate!(1);
 pub const SEXP_NULL: sexp = sexp_make_immediate!(2);
@@ -69,7 +83,7 @@ macro_rules! sexp_isymbolp {
 #[macro_export]
 macro_rules! sexp_charp {
     ($x: expr) => {
-        (($x as sexp_uint_t) & SEXP_EXTENDED_MASK) == SEXP_CHAR_TAG
+        (($x as sexp_uint_t) & (SEXP_EXTENDED_MASK as sexp_uint_t)) == SEXP_CHAR_TAG as sexp_uint_t
     };
 }
 
