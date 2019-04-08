@@ -12,13 +12,6 @@ macro_rules! sexp_make_immediate {
 }
 
 #[macro_export]
-macro_rules! i8_cstring {
-    ($s: expr) => {
-        concat!($s, "\0").as_ptr() as *const i8
-    };
-}
-
-#[macro_export]
 macro_rules! sexp_unbox_fixnum {
     ($n: expr) => {
         ($n as $crate::sexp_sint_t) >> $crate::SEXP_FIXNUM_BITS
