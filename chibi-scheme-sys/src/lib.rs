@@ -118,5 +118,9 @@ pub fn sexp_string_length(x: sexp) -> sexp_uint_t {
     unsafe{ (*x).value.string.as_ref().length }
 }
 
+pub fn sexp_equalp(ctx: sexp, a: sexp, b: sexp) -> sexp {
+    unsafe {sexp_equalp_op(ctx, ptr::null_mut(), 2, a, b) }
+}
+
 // TODO: Safe accessor
 // TODO: Add feature for stuff

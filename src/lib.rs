@@ -1,134 +1,109 @@
 use chibi_scheme_sys::*;
-
-use std::mem;
+use frunk;
+use std::cell;
 use std::ffi;
 use std::fmt;
-use std::fmt::Debug;
-use std::slice;
+use std::mem;
 use std::ptr;
+use std::slice;
+use std::string;
 
-pub struct SExp<'a>(sexp, &'a Context);
+pub struct RawSExp<'a>(sexp, &'a Context);
 
-trait Visitor {
+pub type Coprod<'a> = frunk::Coprod!(Bool, Char, Null, Pair<'a>, String<'a>);
 
-    type Result;
+pub struct SExp<'a>(Coprod<'a>);
 
-    fn visit_bool(&mut self, stmt: &Bool) -> Self::Result;
-    fn visit_char(&mut self, name: &Char) -> Self::Result;
-    fn visit_string(&mut self, expr: &String) -> Self::Result;
-    fn visit_nil(&mut self, expr: &Nil) -> Self::Result;
-    fn visit_pair(&mut self, expr: &Pair) -> Self::Result;
-}
-
-impl <'a> SExp<'a> {
-
-    fn accept<V : Visitor>(&self, visitor: &mut V) -> V::Result {
-        if sexp_booleanp(self.0) {
-            visitor.visit_bool(&Bool(self.0))
-        } else if sexp_charp(self.0) {
-            visitor.visit_char(&Char(self.0))
-        } else if sexp_stringp(self.0) {
-            // TODO: Need to forget the memory
-            visitor.visit_string(&String(self.0, self.1))
-        } else if sexp_nullp(self.0) {
-            visitor.visit_nil(&NIL)
-            // TODO: Need to forget the pair
-        } else if sexp_pairp(self.0) {
-            visitor.visit_pair(&Pair(self.0, self.1))
-        } else {
-            unreachable!()
-        }
+impl<'a> SExp<'a> {
+    pub fn from<T, Index>(t: T) -> SExp<'a>
+    where
+        Coprod<'a>: frunk::coproduct::CoprodInjector<T, Index>,
+    {
+        SExp(Coprod::inject(t))
     }
 
-    pub fn nullp(&self) -> bool {
+    pub fn expect<T, Index>(self) -> Option<T>
+    where
+        Coprod<'a>: frunk::coproduct::CoproductTaker<T, Index>,
+    {
+        self.0.take::<T, _>()
+    }
+}
+
+impl<'a> RawSExp<'a> {
+    fn booleanp(&self) -> bool {
+        sexp_booleanp(self.0)
+    }
+
+    fn charp(&self) -> bool {
+        sexp_charp(self.0)
+    }
+
+    fn stringp(&self) -> bool {
+        sexp_stringp(self.0)
+    }
+
+    fn nullp(&self) -> bool {
         sexp_nullp(self.0)
     }
 
-    pub fn bool(self) -> Option<Bool> {
-        if sexp_booleanp(self.0) {
-            Some(Bool(self.0))
-        } else {
-            None
-        }
+    fn pairp(&self) -> bool {
+        sexp_pairp(self.0)
     }
 
-    pub fn char(self) -> Option<Char> {
-        if sexp_charp(self.0) {
-            Some(Char(self.0))
-         } else {
-            None
-        }
-    }
-
-    pub fn string(self) -> Option<String<'a>> {
-        if sexp_stringp(self.0) {
-            Some(String(self.0, self.1))
+    fn typed(self) -> SExp<'a> {
+        let coprod = if self.booleanp() {
+            Coprod::inject(Bool(self.0))
+        } else if self.charp() {
+            Coprod::inject(Char(self.0))
+        } else if self.nullp() {
+            Coprod::inject(NULL)
+        } else if self.pairp() {
+            Coprod::inject(Pair(self.0, self.1))
+        } else if self.stringp() {
+            Coprod::inject(String(self.0, self.1))
         } else {
-            None
-        }
-    }
-
-    pub fn pair(self) -> Option<Pair<'a>> {
-        if sexp_pairp(self.0) {
-            Some(Pair(self.0, self.1))
-        } else {
-            None
-        }
-    }
-
-    pub fn nil(self) -> Option<Nil> {
-        if self.nullp() {
-            Some(NIL)
-        } else {
-            None
-        }
+            unreachable!()
+        };
+        SExp(coprod)
     }
 }
 
-struct FormatVisitor<'a, 'b>(&'a mut fmt::Formatter<'b>);
-
-impl <'a, 'b> Visitor for FormatVisitor<'a, 'b> {
-    type Result = Result<(), fmt::Error>;
-
-
-    fn visit_bool(&mut self, bool: &Bool) -> Self::Result {
-        bool.fmt(self.0)
-    }
-
-    fn visit_char(&mut self, char: &Char) -> Self::Result {
-        char.fmt(self.0)
-    }
-    fn visit_string(&mut self, string: &String) -> Self::Result {
-        string.fmt(self.0)
-    }
-    fn visit_nil(&mut self, nil: &Nil) -> Self::Result {
-        nil.fmt(self.0)
-    }
-    fn visit_pair(&mut self, pair: &Pair) -> Self::Result {
-        pair.fmt(self.0)
-    }
-}
-
-
-impl <'a> fmt::Debug for SExp<'a> {
+impl<'a> fmt::Debug for SExp<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let mut visitor = FormatVisitor(fmt);
-        self.accept(&mut visitor)
+        // TODO: Change when PolyMut is merged
+        let cell = cell::RefCell::new(fmt);
+        self.0.to_ref().fold(frunk::hlist![
+            |b: &Bool| b.fmt(&mut cell.borrow_mut()),
+            |c: &Char| c.fmt(&mut cell.borrow_mut()),
+            |n: &Null| n.fmt(&mut cell.borrow_mut()),
+            |p: &Pair<'a>| p.fmt(&mut cell.borrow_mut()),
+            |s: &String<'a>| s.fmt(&mut cell.borrow_mut())
+        ])
     }
 }
 
 pub struct String<'a>(sexp, &'a Context);
 
-impl <'a> String<'a> {
+impl<'a> String<'a> {}
+
+impl<'a> PartialEq for String<'a> {
+    fn eq(self: &Self, rhs: &Self) -> bool {
+        RawSExp(sexp_equalp((self.1).0, self.0, rhs.0), self.1)
+            .typed()
+            .expect::<Bool, _>()
+            .unwrap()
+            == Bool::TRUE
+    }
 }
 
-impl <'a> Drop for String<'a> {
+impl<'a> Drop for String<'a> {
     fn drop(&mut self) {
         unsafe { sexp_release_object((self.1).0, self.0) }
     }
 }
 
-impl <'a> Into<&'a ffi::CStr> for String<'a> {
+impl<'a> Into<&'a ffi::CStr> for String<'a> {
     fn into(self: Self) -> &'a ffi::CStr {
         let len = (sexp_string_size(self.0) + 1) as _;
         let slice = unsafe { slice::from_raw_parts(sexp_string_data(self.0) as _, len) };
@@ -139,7 +114,7 @@ impl <'a> Into<&'a ffi::CStr> for String<'a> {
     }
 }
 
-impl <'a> Into<ffi::CString> for String<'a> {
+impl<'a> Into<ffi::CString> for String<'a> {
     fn into(self: Self) -> ffi::CString {
         let len = (sexp_string_size(self.0)) as _;
         let mut data = Vec::with_capacity(len);
@@ -149,24 +124,24 @@ impl <'a> Into<ffi::CString> for String<'a> {
     }
 }
 
-impl <'a> fmt::Debug for String<'a> {
+impl<'a> fmt::Debug for String<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let len = (sexp_string_size(self.0) + 1) as _;
         let slice = unsafe { slice::from_raw_parts(sexp_string_data(self.0) as _, len) };
         let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) };
-        fmt.write_str(&format!("\"{:?}\"", c_str))
+        fmt.write_fmt(format_args!("\"{:?}\"", c_str))
     }
 }
 
 pub struct Pair<'a>(sexp, &'a Context);
 
-impl <'a> Pair<'a> {
-    pub fn car(&self) -> SExp<'a> {
-        SExp(sexp_car(self.0), self.1)
+impl<'a> Pair<'a> {
+    pub fn car(&self) -> RawSExp<'a> {
+        RawSExp(sexp_car(self.0), self.1)
     }
 
-    pub fn cdr(&self) -> SExp<'a> {
-        SExp(sexp_cdr(self.0), self.1)
+    pub fn cdr(&self) -> RawSExp<'a> {
+        RawSExp(sexp_cdr(self.0), self.1)
     }
 
     pub fn listp(&self) -> bool {
@@ -174,38 +149,51 @@ impl <'a> Pair<'a> {
     }
 }
 
-impl <'a> fmt::Debug for Pair<'a> {
+impl<'a> PartialEq for Pair<'a> {
+    fn eq(self: &Self, rhs: &Self) -> bool {
+        RawSExp(sexp_equalp((self.1).0, self.0, rhs.0), self.1)
+            .typed()
+            .expect::<Bool, _>()
+            .unwrap()
+            == Bool::TRUE
+    }
+}
+
+impl<'a> fmt::Debug for Pair<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         if self.listp() {
             fmt.write_str("(")?;
             let mut h = self.car();
             let mut t = self.cdr();
             while !t.nullp() {
-                h.fmt(fmt)?;
+                h.typed().fmt(fmt)?;
                 fmt.write_str(" ")?;
-                let pair = t.pair().unwrap();
+                let pair = t.typed().0.take::<Pair, _>().unwrap();
                 h = pair.car();
                 t = pair.cdr();
             }
-            h.fmt(fmt)?;
-            fmt.write_str(")")
+            fmt.write_fmt(format_args!("{:?})", h.typed()))
         } else {
-            fmt.write_fmt(format_args!("({:?} . {:?})", self.car(), self.cdr()))
+            fmt.write_fmt(format_args!(
+                "({:?} . {:?})",
+                self.car().typed(),
+                self.cdr().typed()
+            ))
         }
     }
 }
 
-pub struct Nil(sexp);
+pub struct Null(sexp);
 
-impl fmt::Debug for Nil {
+impl fmt::Debug for Null {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.write_str("()")
     }
 }
 
-pub const NIL: Nil = Nil(SEXP_NULL);
+pub const NULL: Null = Null(SEXP_NULL);
 
-impl PartialEq for Nil {
+impl PartialEq for Null {
     fn eq(self: &Self, _rhs: &Self) -> bool {
         true
     }
@@ -231,14 +219,16 @@ impl From<char> for Char {
 
 impl fmt::Debug for Char {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt.write_str(&format!("#\\{}", (sexp_unbox_character(self.0) as u8) as char))
+        fmt.write_fmt(format_args!(
+            "#\\{}",
+            (sexp_unbox_character(self.0) as u8) as char
+        ))
     }
 }
 
 impl PartialEq for Char {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_unbox_character(self.0) ==
-            sexp_unbox_character(rhs.0)
+        sexp_unbox_character(self.0) == sexp_unbox_character(rhs.0)
     }
 }
 
@@ -246,6 +236,7 @@ pub struct Bool(sexp);
 
 impl Bool {
     const TRUE: Bool = Bool(SEXP_TRUE);
+    const FALSE: Bool = Bool(SEXP_FALSE);
 }
 
 impl Into<bool> for Bool {
@@ -266,8 +257,7 @@ impl From<bool> for Bool {
 
 impl PartialEq for Bool {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_truep(self.0) && sexp_truep(rhs.0)
-            || sexp_not(self.0) && sexp_not(rhs.0)
+        sexp_truep(self.0) && sexp_truep(rhs.0) || sexp_not(self.0) && sexp_not(rhs.0)
     }
 }
 
@@ -284,12 +274,28 @@ impl fmt::Debug for Bool {
 pub struct Context(sexp);
 
 impl Context {
-    fn eval_string<T: Into<std::string::String>>(&self, t: T) -> Result<SExp, ffi::NulError> {
+    fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<RawSExp, ffi::NulError> {
         let string = ffi::CString::new(t.into())?;
-        Ok(SExp(
-            unsafe {
-                sexp_eval_string(self.0, string.as_ptr(), -1, ptr::null_mut())
-            }, self))
+        Ok(RawSExp(
+            unsafe { sexp_eval_string(self.0, string.as_ptr(), -1, ptr::null_mut()) },
+            self,
+        ))
+    }
+
+    fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> Pair {
+        let f = frunk::hlist![
+            |b: &Bool| b.0,
+            |c: &Char| c.0,
+            |n: &Null| n.0,
+            |p: &Pair<'a>| p.0,
+            |s: &String<'a>| s.0
+        ];
+        RawSExp(
+            sexp_cons(self.0, a.0.to_ref().fold(f), b.0.to_ref().fold(f)),
+            self,
+        ).typed()
+        .expect::<Pair, _>()
+        .unwrap()
     }
 }
 
@@ -309,47 +315,114 @@ impl Drop for Context {
 
 mod tests {
 
-    use std::ffi;
     use crate::*;
+    use std::ffi;
 
     #[test]
     fn test_pair() {
         let context = Context::default();
-        assert_eq!("(#t . #f)", format!("{:?}", context.eval_string("'(#t . #f)").unwrap()));
-        assert_eq!("(#\\c #t (#t . #f))", format!("{:?}", context.eval_string("'(#\\c #t (#t . #f))").unwrap()))
+        assert_eq!(
+            Some(context.cons(&SExp::from(Bool::TRUE), &SExp::from(Bool::FALSE))),
+            context
+                .eval_string("'(#t . #f)")
+                .unwrap()
+                .typed()
+                .expect::<Pair, _>()
+        );
+
+        assert_eq!(
+            "(#t . #f)",
+            format!("{:?}", context.eval_string("'(#t . #f)").unwrap().typed())
+        );
+        assert_eq!(
+            "(#\\c #t (#t . #f))",
+            format!(
+                "{:?}",
+                context.eval_string("'(#\\c #t (#t . #f))").unwrap().typed()
+            )
+        );
     }
 
     #[test]
-    fn test_nil() {
+    fn test_null() {
         let context = Context::default();
-        assert_eq!(context.eval_string("'()").unwrap().nil(), Some(NIL))
+        assert_eq!(
+            context
+                .eval_string("'()")
+                .unwrap()
+                .typed()
+                .0
+                .take::<Null, _>(),
+            Some(NULL)
+        );
     }
 
     #[test]
     fn test_bool() {
         let context = Context::default();
-        assert_eq!(context.eval_string("#t").unwrap().bool(), Some(true.into()));
-        assert_eq!(context.eval_string("#f").unwrap().bool(), Some(false.into()));
-        assert_eq!(context.eval_string("#t").unwrap().char(), None);
+        assert_eq!(
+            context
+                .eval_string("#t")
+                .unwrap()
+                .typed()
+                .0
+                .take::<Bool, _>(),
+            Some(true.into())
+        );
+        assert_eq!(
+            context
+                .eval_string("#f")
+                .unwrap()
+                .typed()
+                .expect::<Bool, _>(),
+            Some(false.into())
+        );
+        assert_eq!(
+            context
+                .eval_string("#t")
+                .unwrap()
+                .typed()
+                .expect::<Char, _>(),
+            None
+        );
     }
 
     #[test]
     fn test_char() {
         let context = Context::default();
-        assert_eq!(context.eval_string("#\\s").unwrap().bool(), None);
-        assert_eq!(context.eval_string("#\\h").unwrap().char(), Some('h'.into()))
+        assert_eq!(
+            context
+                .eval_string("#\\s")
+                .unwrap()
+                .typed()
+                .expect::<Bool, _>(),
+            None
+        );
+        assert_eq!(
+            context
+                .eval_string("#\\h")
+                .unwrap()
+                .typed()
+                .expect::<Char, _>(),
+            Some('h'.into())
+        )
     }
 
     #[test]
     fn test_string() {
-
         let context = Context::default();
-        let a: &ffi::CStr = {
-            context.eval_string("\"a\"").unwrap().string().unwrap().into()
-        };
-        let b: &ffi::CStr = {
-            context.eval_string("\"b\"").unwrap().string().unwrap().into()
-        };
-        assert_ne!(a, b);
+        let foo = context
+            .eval_string("\"foo\"")
+            .unwrap()
+            .typed()
+            .expect::<String, _>();
+
+        let bar = context
+            .eval_string("\"bar\"")
+            .unwrap()
+            .typed()
+            .expect::<String, _>();
+        assert_eq!(foo, foo);
+        assert_ne!(foo, bar);
     }
 }
