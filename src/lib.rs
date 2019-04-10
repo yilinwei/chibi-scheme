@@ -414,5 +414,6 @@ mod tests {
             .expect::<String, _>();
         assert_eq!(foo, foo);
         assert_ne!(foo, bar);
+        assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()))
     }
 }
