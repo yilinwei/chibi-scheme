@@ -48,7 +48,11 @@ impl<'a> fmt::Debug for SExp<'a> {
 
 pub struct String<'a>(RawSExp<'a>);
 
-impl<'a> String<'a> {}
+impl<'a> String<'a> {
+    fn data(&'a self) -> &'a ffi::CStr {
+        RawContext::string_data(&self.0)
+    }
+}
 
 impl<'a> PartialEq for String<'a> {
     fn eq(self: &Self, rhs: &Self) -> bool {
@@ -56,38 +60,9 @@ impl<'a> PartialEq for String<'a> {
     }
 }
 
-// impl<'a> Drop for String<'a> {
-//     fn drop(&mut self) {
-//         unsafe { sexp_release_object((self.1).0, self.0) }
-//     }
-// }
-
-// impl<'a> Into<&'a ffi::CStr> for String<'a> {
-//     fn into(self: Self) -> &'a ffi::CStr {
-//         let len = (sexp_string_size(self.0) + 1) as _;
-//         let slice = unsafe { slice::from_raw_parts(sexp_string_data(self.0) as _, len) };
-//         let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) };
-//         // Only drop once the context is destroyed
-//         mem::forget(self);
-//         c_str
-//     }
-// }
-
-// impl<'a> Into<ffi::CString> for String<'a> {
-//     fn into(self: Self) -> ffi::CString {
-//         let len = (sexp_string_size(self.0)) as _;
-//         let mut data = Vec::with_capacity(len);
-//         let slice = unsafe { slice::from_raw_parts(sexp_string_data(self.0) as _, len) };
-//         data.extend_from_slice(slice);
-//         unsafe { ffi::CString::from_vec_unchecked(data) }
-//     }
-// }
-
 impl<'a> fmt::Debug for String<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let c_str =
-            unsafe { ffi::CStr::from_bytes_with_nul_unchecked(RawContext::string_data(&self.0)) };
-        fmt.write_fmt(format_args!("\"{:?}\"", c_str))
+        fmt.write_fmt(format_args!("\"{:?}\"", self.data()))
     }
 }
 
@@ -228,10 +203,11 @@ impl RawContext {
         (sexp_unbox_character(a.0) as u8) as char
     }
 
-    fn string_data<'a>(a: &'a RawSExp) -> &'a [u8] {
+    fn string_data<'a>(a: &'a RawSExp) -> &'a ffi::CStr {
         let len = RawContext::string_size(a) + 1;
-        // let len = (RawContext::string_size(&self.0) + 1) as _;
-        unsafe { slice::from_raw_parts(sexp_string_data(a.0) as _, len) }
+        let slice = unsafe { slice::from_raw_parts(sexp_string_data(a.0) as _, len) };
+        unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) }
+
     }
     fn string_size(a: &RawSExp) -> usize {
         sexp_string_size(a.0) as usize
