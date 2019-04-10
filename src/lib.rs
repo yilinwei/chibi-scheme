@@ -32,28 +32,6 @@ impl<'a> SExp<'a> {
     }
 }
 
-impl<'a> RawSExp<'a> {
-    fn booleanp(&self) -> bool {
-        sexp_booleanp(self.0)
-    }
-
-    fn charp(&self) -> bool {
-        sexp_charp(self.0)
-    }
-
-    fn stringp(&self) -> bool {
-        sexp_stringp(self.0)
-    }
-
-    fn nullp(&self) -> bool {
-        sexp_nullp(self.0)
-    }
-
-    fn pairp(&self) -> bool {
-        sexp_pairp(self.0)
-    }
-}
-
 impl<'a> fmt::Debug for SExp<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         // TODO: Change when PolyMut is merged
