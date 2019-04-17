@@ -383,7 +383,7 @@ impl RawContext {
         sexp_exceptionp(sexp.0)
     }
 
-    pub fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<RawSExp, ffi::NulError> {
+    fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<RawSExp, ffi::NulError> {
         let string = ffi::CString::new(t.into())?;
         Ok(RawSExp(
             unsafe { sexp_eval_string(self.0, string.as_ptr(), -1, ptr::null_mut()) },
@@ -434,7 +434,7 @@ impl Default for Context {
 }
 
 impl Context {
-    fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<SExp, ffi::NulError> {
+    pub fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<SExp, ffi::NulError> {
         self.0.eval_string(t).map(|x| x.into())
     }
     //The problem
