@@ -383,7 +383,7 @@ impl RawContext {
         sexp_exceptionp(sexp.0)
     }
 
-    fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<RawSExp, ffi::NulError> {
+    pub fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<RawSExp, ffi::NulError> {
         let string = ffi::CString::new(t.into())?;
         Ok(RawSExp(
             unsafe { sexp_eval_string(self.0, string.as_ptr(), -1, ptr::null_mut()) },
@@ -425,6 +425,7 @@ impl<'a> Into<SExp<'a>> for RawSExp<'a> {
         SExp(coprod)
     }
 }
+
 
 impl Default for Context {
     fn default() -> Self {
@@ -505,6 +506,38 @@ mod tests {
             "(#\\c #t (#t . #f))",
             format!("{:?}", context.eval_string("'(#\\c #t (#t . #f))").unwrap())
         );
+
+        assert_eq!(
+            "(#t . (1 . 2))",
+            format!("{:?}", context.eval_string("'(#t . (1 . 2))").unwrap())
+        );
+
+        assert_eq!(
+            "(1 2 3)",
+            format!("{:?}", context.eval_string("'(1 2 3)").unwrap())
+        );
+
+        assert_eq!(
+            "(\"x\" . 1)",
+            format!("{:?}", context.eval_string("'(x . 1)").unwrap())
+        );
+
+        // We now require generic serialization
+        // frunnk has a labelled generic (with a Repr)
+        // we need to take the repr, and transform field names into symbols and values into values
+        // first let's just write the methods
+        let pair_struct_string = "'((x . 1) (y . 2))";
+        let pair_struct = context
+            .eval_string(pair_struct_string)
+            .unwrap()
+            .expect::<Pair, _>()
+            .unwrap();
+        let pair_x = pair_struct.car().expect::<Pair, _>().unwrap();
+        let x_symbol = pair_x.car().expect::<Symbol, _>().unwrap();
+        let x_value = pair_x.cdr().expect::<Integer, _>().unwrap();
+        let pair_y = pair_struct.cdr().expect::<Pair, _>().unwrap();
+        let x_value_i64: i64 = x_value.into();
+        assert_eq!(x_value_i64, 1)
     }
 
     #[test]
@@ -590,5 +623,22 @@ mod tests {
         assert_eq!(foo, foo);
         assert_ne!(foo, bar);
         assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
+    }
+
+
+    #[test]
+    fn test_symbol() {
+        let context = Context::default();
+        let foo = context
+            .eval_string("'foo")
+            .unwrap()
+            .expect::<Symbol, _>();
+
+        let bar = context
+            .eval_string("'bar")
+            .unwrap()
+            .expect::<Symbol, _>();
+        assert_eq!(foo, foo);
+        assert_ne!(foo, bar);
     }
 }
