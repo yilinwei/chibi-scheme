@@ -7,6 +7,6 @@
 // pub use error::{Error, Result};
 // pub use ser::{to_string, Serializer};
 
-pub fn hello_world() -> {
+pub fn hello_world() {
     println!("Hello from serde!");
 }
