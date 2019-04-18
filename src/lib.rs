@@ -1,4 +1,4 @@
-mod serde;
+pub mod serde;
 
 use chibi_scheme_sys::*;
 use frunk;
