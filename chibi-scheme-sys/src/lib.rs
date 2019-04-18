@@ -11,8 +11,16 @@ const fn sexp_make_immediate(n: u32) -> sexp {
     ((n << SEXP_EXTENDED_BITS) + SEXP_EXTENDED_TAG) as sexp
 }
 
+pub fn sexp_make_fixnum(n: i64) -> sexp {
+    (((n as sexp_sint_t) << SEXP_FIXNUM_BITS) + (SEXP_FIXNUM_TAG as sexp_sint_t)) as sexp
+}
+
 pub fn sexp_unbox_fixnum(n: sexp) -> sexp_sint_t {
     (n as sexp_sint_t) >> SEXP_FIXNUM_BITS
+}
+
+pub fn sexp_flonum_value(x: sexp) -> f64 {
+    unsafe { *(*x).value.flonum.as_ref() }
 }
 
 pub fn sexp_make_character(n: raw::c_char) -> sexp {
@@ -45,12 +53,36 @@ pub fn sexp_fixnump(x: sexp) -> bool {
     ((x as sexp_uint_t) & SEXP_FIXNUM_MASK as sexp_uint_t) == SEXP_FIXNUM_TAG as sexp_uint_t
 }
 
+pub fn sexp_flonump(x: sexp) -> bool {
+    sexp_check_tag(x, sexp_types_SEXP_FLONUM)
+}
+
+pub fn sexp_exceptionp(x: sexp) -> bool {
+    sexp_check_tag(x, sexp_types_SEXP_EXCEPTION)
+}
+
+pub fn sexp_exception_message(x: sexp) -> sexp {
+    unsafe {(*x).value.exception.as_ref().message}
+}
+
 pub fn sexp_isymbolp(x: sexp) -> bool {
     ((x as sexp_uint_t) & SEXP_IMMEDIATE_MASK as sexp_uint_t) == SEXP_ISYMBOL_TAG as sexp_uint_t
 }
 
+pub fn sexp_lsymbolp(x: sexp) -> bool {
+    sexp_check_tag(x, sexp_types_SEXP_SYMBOL)
+}
+
 pub fn sexp_charp(x: sexp) -> bool {
     ((x as sexp_uint_t) & SEXP_EXTENDED_MASK as sexp_uint_t) == SEXP_CHAR_TAG as sexp_uint_t
+}
+
+pub fn sexp_integerp(x: sexp) -> bool {
+    ((x as sexp_uint_t) & SEXP_FIXNUM_MASK as sexp_uint_t) == SEXP_FIXNUM_TAG as sexp_uint_t
+}
+
+pub fn sexp_realp(x: sexp) -> bool {
+    sexp_integerp(x) || sexp_flonump(x)
 }
 
 pub fn sexp_booleanp(x: sexp) -> bool {
@@ -120,6 +152,10 @@ pub fn sexp_string_length(x: sexp) -> sexp_uint_t {
 
 pub fn sexp_equalp(ctx: sexp, a: sexp, b: sexp) -> sexp {
     unsafe {sexp_equalp_op(ctx, ptr::null_mut(), 2, a, b) }
+}
+
+pub fn sexp_symbol_to_string(ctx: sexp, s: sexp) -> sexp {
+    unsafe {sexp_symbol_to_string_op(ctx, ptr::null_mut(), 1, s)}
 }
 
 // TODO: Safe accessor
