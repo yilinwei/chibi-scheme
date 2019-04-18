@@ -10,10 +10,19 @@ use std::string;
 
 pub struct RawSExp<'a>(sexp, Option<&'a RawContext>);
 
+impl Drop for RawSExp<'_> {
+    fn drop(&mut self) {
+        if RawContext::pointerp(self) {
+            unsafe { sexp_release_object(self.1.unwrap().0, self.0) }
+        }
+    }
+}
+
 // TODO: Add generic typing please
 pub type Coprod<'a> = frunk::Coprod!(Bool, Char, Integer, Rational<'a>, Null, Pair<'a>, String<'a>, Exception<'a>, Symbol<'a>);
 
-//
+
+
 pub struct SExp<'a>(Coprod<'a>);
 
 impl<'a> SExp<'a> {
@@ -289,7 +298,7 @@ impl RawContext {
 
     fn make_flonum(&self, i: f64) -> RawSExp {
         let flonum = unsafe { sexp_make_flonum(self.0, i)};
-        RawSExp(flonum, None)
+        RawSExp(flonum, Some(self))
     }
 
     fn string_data<'a>(a: &'a RawSExp) -> &'a ffi::CStr {
@@ -344,6 +353,10 @@ impl RawContext {
 
     fn stringp(sexp: &RawSExp) -> bool {
         sexp_stringp(sexp.0)
+    }
+
+    fn pointerp(sexp: &RawSExp) -> bool {
+        sexp_pointerp(sexp.0)
     }
 
     fn truep(sexp: &RawSExp) -> bool {
@@ -401,7 +414,7 @@ impl<'a> Into<SExp<'a>> for RawSExp<'a> {
         } else if RawContext::integerp(&self) {
             Coprod::inject(Integer(RawSExp(self.0, None)))
         } else if RawContext::flonump(&self) {
-            Coprod::inject(Rational(RawSExp(self.0, None)))
+            Coprod::inject(Rational(self))
         } else if RawContext::symbolp(&self) {
             Coprod::inject(Symbol(self))
         } else if RawContext::exceptionp(&self) {
@@ -449,8 +462,8 @@ impl Context {
         self.0.listp(&pair.0)
     }
 
-    pub fn make_flonum(&self, i: f64) -> RawSExp {
-        self.0.make_flonum(i)
+    pub fn make_flonum(&self, i: f64) -> Rational {
+        Rational(self.0.make_flonum(i))
     }
 }
 
@@ -553,13 +566,13 @@ mod tests {
 
         assert_eq!(
             context.eval_string("4.5").unwrap().expect::<Rational, _>(),
-            Some(Rational(context.make_flonum(4.5)))
+            Some(context.make_flonum(4.5))
         );
 
         assert_eq!(
             context.eval_string("(+ 3.0 1.5)").unwrap().expect::<Rational, _>(),
-            Some(Rational(context.make_flonum(4.5)))
-        )
+            Some(context.make_flonum(4.5))
+        );
     }
 
     #[test]
@@ -576,6 +589,6 @@ mod tests {
             .expect::<String, _>();
         assert_eq!(foo, foo);
         assert_ne!(foo, bar);
-        assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()))
+        assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
     }
 }
