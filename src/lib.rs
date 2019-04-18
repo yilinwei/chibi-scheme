@@ -1,3 +1,5 @@
+mod serde;
+
 use chibi_scheme_sys::*;
 use frunk;
 use std::cell;

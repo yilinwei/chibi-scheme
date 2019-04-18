@@ -1,0 +1,12 @@
+// TODO: How do we define nested libraries?
+// mod de;
+// mod error;
+// mod ser;
+
+// pub use de::{from_str, Deserializer};
+// pub use error::{Error, Result};
+// pub use ser::{to_string, Serializer};
+
+pub fn hello_world() -> {
+    println!("Hello from serde!");
+}
