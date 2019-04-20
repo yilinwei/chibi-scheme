@@ -1,5 +1,7 @@
 pub mod serde;
 
+extern crate serde as lib_serde;
+
 use chibi_scheme_sys::*;
 use frunk;
 use std::cell;
@@ -21,25 +23,52 @@ impl Drop for RawSExp<'_> {
 }
 
 // TODO: Add generic typing please
-pub type Coprod<'a> = frunk::Coprod!(Bool, Char, Integer, Rational<'a>, Null, Pair<'a>, String<'a>, Exception<'a>, Symbol<'a>);
+pub type Coprod<'a> = frunk::Coprod!(
+    Bool,
+    Char,
+    Integer,
+    Rational<'a>,
+    Null,
+    Pair<'a>,
+    String<'a>,
+    Exception<'a>,
+    Symbol<'a>
+);
 
+pub type CoprodRef<'c, 'r> = frunk::Coprod!(
+    &'r Bool,
+    &'r Char,
+    &'r Integer,
+    &'r Rational<'c>,
+    &'r Null,
+    &'r Pair<'c>,
+    &'r String<'c>,
+    &'r Exception<'c>,
+    &'r Symbol<'c>
+);
 
+pub struct SExp<'c>(Coprod<'c>);
 
-pub struct SExp<'a>(Coprod<'a>);
-
-impl<'a> SExp<'a> {
-    pub fn from<T, Index>(t: T) -> SExp<'a>
+impl<'c> SExp<'c> {
+    pub fn from<T, Index>(t: T) -> SExp<'c>
     where
-        Coprod<'a>: frunk::coproduct::CoprodInjector<T, Index>,
+        Coprod<'c>: frunk::coproduct::CoprodInjector<T, Index>,
     {
         SExp(Coprod::inject(t))
     }
 
     pub fn expect<T, Index>(self) -> Option<T>
     where
-        Coprod<'a>: frunk::coproduct::CoproductTaker<T, Index>,
+        Coprod<'c>: frunk::coproduct::CoproductTaker<T, Index>,
     {
         self.0.take::<T, _>()
+    }
+
+    pub fn expect_ref<'a, T, Index>(&'a self) -> Option<&'a T>
+    where
+        CoprodRef<'c, 'a>: frunk::coproduct::CoproductTaker<&'a T, Index>,
+    {
+        self.0.to_ref().take::<&T, _>()
     }
 }
 
@@ -147,6 +176,13 @@ impl PartialEq for Null {
 
 pub struct Symbol<'a>(RawSExp<'a>);
 
+impl<'a> Symbol<'a> {
+    fn to_string(&self) -> std::string::String {
+        let s = (self.0).1.unwrap().symbol_to_string(&self.0);
+        s.data().to_str().unwrap().to_owned()
+    }
+}
+
 impl<'a> PartialEq for Symbol<'a> {
     fn eq(self: &Self, rhs: &Self) -> bool {
         (self.0).1.unwrap().equalp(&self.0, &rhs.0)
@@ -195,12 +231,6 @@ impl Bool {
     const FALSE: Bool = Bool(RawSExp(SEXP_FALSE, None));
 }
 
-impl Into<bool> for Bool {
-    fn into(self: Self) -> bool {
-        RawContext::truep(&self.0)
-    }
-}
-
 impl From<bool> for Bool {
     fn from(b: bool) -> Bool {
         if b {
@@ -208,6 +238,12 @@ impl From<bool> for Bool {
         } else {
             Bool::FALSE
         }
+    }
+}
+
+impl From<&Bool> for bool {
+    fn from(b: &Bool) -> bool {
+        RawContext::truep(&b.0)
     }
 }
 
@@ -230,17 +266,22 @@ impl fmt::Debug for Bool {
 
 pub struct Integer(RawSExp<'static>);
 
-impl Into<i64> for Integer {
-    fn into(self: Self) -> i64 {
-        //TODO: Need to check casting
-        (sexp_unbox_fixnum((self.0).0) as u8) as i64
-    }
-}
-
 impl From<i64> for Integer {
     fn from(i: i64) -> Integer {
         //TODO: check
         Integer(RawSExp(sexp_make_fixnum(i as _), None))
+    }
+}
+
+impl From<Integer> for i64 {
+    fn from(i: Integer) -> i64 {
+        (sexp_unbox_fixnum((i.0).0) as u8) as i64
+    }
+}
+
+impl From<&Integer> for i64 {
+    fn from(i: &Integer) -> i64 {
+        (sexp_unbox_fixnum((i.0).0) as u8) as i64
     }
 }
 
@@ -259,9 +300,14 @@ impl PartialEq for Integer {
 pub struct Rational<'a>(RawSExp<'a>);
 
 impl<'a> Into<f64> for Rational<'a> {
-
     fn into(self: Self) -> f64 {
         sexp_flonum_value((self.0).0)
+    }
+}
+
+impl<'a> From<&Rational<'a>> for f64 {
+    fn from(i: &Rational) -> f64 {
+        sexp_flonum_value((i.0).0) as f64
     }
 }
 
@@ -299,15 +345,14 @@ impl RawContext {
     }
 
     fn make_flonum(&self, i: f64) -> RawSExp {
-        let flonum = unsafe { sexp_make_flonum(self.0, i)};
-        RawSExp(flonum, Some(self))
+        let flonum = unsafe { sexp_make_flonum(self.0, i) };
+        RawSExp(flonum, None)
     }
 
     fn string_data<'a>(a: &'a RawSExp) -> &'a ffi::CStr {
         let len = RawContext::string_size(a) + 1;
         let slice = unsafe { slice::from_raw_parts(sexp_string_data(a.0) as _, len) };
         unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) }
-
     }
 
     fn exception_message(&self, a: &RawSExp) -> RawSExp {
@@ -427,7 +472,6 @@ impl<'a> Into<SExp<'a>> for RawSExp<'a> {
         SExp(coprod)
     }
 }
-
 
 impl Default for Context {
     fn default() -> Self {
@@ -586,7 +630,10 @@ mod tests {
             None
         );
         assert_eq!(
-            context.eval_string("(+ 1 3)").unwrap().expect::<Integer, _>(),
+            context
+                .eval_string("(+ 1 3)")
+                .unwrap()
+                .expect::<Integer, _>(),
             Some(4.into())
         )
     }
@@ -594,10 +641,7 @@ mod tests {
     #[test]
     fn test_rational() {
         let context = Context::default();
-        assert_eq!(
-            "4.5",
-            format!("{:?}", context.eval_string("4.5").unwrap())
-        );
+        assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
 
         assert_eq!(
             context.eval_string("4.5").unwrap().expect::<Rational, _>(),
@@ -605,9 +649,12 @@ mod tests {
         );
 
         assert_eq!(
-            context.eval_string("(+ 3.0 1.5)").unwrap().expect::<Rational, _>(),
-            Some(context.make_flonum(4.5))
-        );
+            context
+                .eval_string("(+ 3.0 1.5)")
+                .unwrap()
+                .expect::<Rational, _>(),
+            Some(Rational(context.make_flonum(4.5)))
+        )
     }
 
     #[test]
@@ -627,19 +674,12 @@ mod tests {
         assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
     }
 
-
     #[test]
     fn test_symbol() {
         let context = Context::default();
-        let foo = context
-            .eval_string("'foo")
-            .unwrap()
-            .expect::<Symbol, _>();
+        let foo = context.eval_string("'foo").unwrap().expect::<Symbol, _>();
 
-        let bar = context
-            .eval_string("'bar")
-            .unwrap()
-            .expect::<Symbol, _>();
+        let bar = context.eval_string("'bar").unwrap().expect::<Symbol, _>();
         assert_eq!(foo, foo);
         assert_ne!(foo, bar);
     }
