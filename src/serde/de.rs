@@ -1,4 +1,5 @@
 // TODO: put coprod in a separate module
+use std::cell;
 use super::super::{
     Bool, Char, Context, Exception, Integer, Null, Pair, Rational, SExp, String, Symbol,
 };
@@ -273,8 +274,17 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // TODO: Support more than bools - we need to match on the coprod
-        unimplemented!();
+        self.input.0.to_ref().fold(frunk::hlist![
+            |b: &Bool| unimplemented!(),
+            |c: &Char| unimplemented!(),
+            |i: &Integer| unimplemented!(),
+            |i: &Rational| visitor.visit_f64(f64::from(i)),
+            |n: &Null| unimplemented!(),
+            |p: &Pair<'a>| unimplemented!(),
+            |s: &String<'a>| unimplemented!(),
+            |s: &Exception<'a>| unimplemented!(),
+            |s: &Symbol<'a>| unimplemented!()
+        ])
     }
 }
 
