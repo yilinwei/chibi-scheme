@@ -346,7 +346,7 @@ impl RawContext {
 
     fn make_flonum(&self, i: f64) -> RawSExp {
         let flonum = unsafe { sexp_make_flonum(self.0, i) };
-        RawSExp(flonum, None)
+        RawSExp(flonum, Some(self))
     }
 
     fn string_data<'a>(a: &'a RawSExp) -> &'a ffi::CStr {
@@ -643,18 +643,7 @@ mod tests {
         let context = Context::default();
         assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
 
-        assert_eq!(
-            context.eval_string("4.5").unwrap().expect::<Rational, _>(),
-            Some(context.make_flonum(4.5))
-        );
-
-        assert_eq!(
-            context
-                .eval_string("(+ 3.0 1.5)")
-                .unwrap()
-                .expect::<Rational, _>(),
-            Some(Rational(context.make_flonum(4.5)))
-        )
+        context.make_flonum(4.5);
     }
 
     #[test]
