@@ -9,5 +9,6 @@ license = "Apache-2.0"
 
 [dependencies]
 chibi-scheme-sys = { path = "chibi-scheme-sys" }
-frunk = "0.3.0"
+quote = "0.6"
+syn = "0.15"
 serde = { version = "1.0.90", features = ["derive"] }
