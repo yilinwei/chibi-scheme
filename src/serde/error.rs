@@ -1,16 +1,19 @@
 use lib_serde::{de, ser};
 use std;
 use std::fmt::{self, Display};
+use std::num::TryFromIntError;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     Message(String),
-    ExpectedBoolean,
+    ExpectedBoolean(String),
     ExpectedInteger,
+    IntegerTooLargeForBytes(TryFromIntError),
     ExpectedRational,
     ExpectedSymbol,
+    ExpectedChar,
     ExpectedPair,
     ExpectedEndOfAssocList,
 }
@@ -38,6 +41,13 @@ impl std::error::Error for Error {
         match *self {
             Error::Message(ref msg) => msg,
             _ => unimplemented!(),
+        }
+    }
+
+    fn cause(&self) -> Option<&std::error::Error> {
+        match self {
+            Error::IntegerTooLargeForBytes(cause) => Some(cause),
+            _ => None,
         }
     }
 }

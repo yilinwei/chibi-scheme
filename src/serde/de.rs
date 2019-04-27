@@ -1,14 +1,61 @@
-// TODO: put coprod in a separate module
-use std::cell;
-use super::super::{
+use crate::serde::error::{Error, Result};
+use crate::sexp::{
     Bool, Char, Context, Exception, Integer, Null, Pair, Rational, SExp, String, Symbol,
 };
-use super::error::{Error, Result};
 use serde::de::{self, DeserializeSeed, MapAccess, Visitor};
 use serde::Deserialize;
+use std::cell;
+use std::rc::Rc;
+use std::convert::TryFrom;
+use std::num::TryFromIntError;
 
-pub struct Deserializer<'de> {
-    input: SExp<'de>,
+pub struct Deserializer<'c> {
+    input: SExp<'c>,
+}
+
+impl Deserializer<'_> {
+    fn expect_bool(&self) -> Result<bool> {
+        self.input
+            .expect_ref::<Bool, _>()
+            .ok_or(Error::ExpectedBoolean(format!("{:?}", self.input)))
+            .map(|b| b.into())
+    }
+
+    fn try_from_integer<E: Into<TryFromIntError>, I: TryFrom<i32, Error = E>>(i: &Integer) -> Result<I> {
+        I::try_from(i32::from(i)).map_err(|e| Error::IntegerTooLargeForBytes(e.into()))
+    }
+
+    fn expect_integer(&self) -> Result<&Integer> {
+        self.input
+            .expect_ref::<Integer, _>()
+            .ok_or(Error::ExpectedInteger)
+    }
+
+    fn expect_i<E: Into<TryFromIntError>, I: TryFrom<i32, Error = E>>(&self) -> Result<I> {
+        self.expect_integer()
+            .and_then(|i| Deserializer::try_from_integer(i))
+    }
+
+    fn expect_rational<I: From<f32>>(&self) -> Result<I> {
+        self.input
+            .expect_ref::<Rational, _>()
+            .ok_or(Error::ExpectedRational)
+            .map(|i| I::from(f32::from(i)))
+    }
+
+    fn expect_symbol(&self) -> Result<&Symbol> {
+        self
+            .input
+            .expect_ref::<Symbol, _>()
+            .ok_or(Error::ExpectedSymbol)
+    }
+    fn expect_char(&self) -> Result<char> {
+        self
+            .input
+            .expect_ref::<Char, _>()
+            .ok_or(Error::ExpectedChar)
+            .map(|c| char::from(c))
+    }
 }
 
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
@@ -25,99 +72,63 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        println!("Visit bool");
-        visitor.visit_bool(
-            self.input
-                .expect_ref::<Bool, _>()
-                .ok_or(Error::ExpectedBoolean)?
-                .into(),
-        )
+        visitor.visit_bool(self.expect_bool()?)
     }
+
     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i8(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as i8)
+        visitor.visit_i8(self.expect_i::<_, i8>()?)
     }
 
     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i16(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as i16)
+        visitor.visit_i16(self.expect_i::<_, i16>()?)
     }
 
     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i32(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as i32)
+        visitor.visit_i32(self.expect_i::<_, i32>()?)
     }
+
     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_i64(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?
-                .into(),
-        )
+        unimplemented!("bignums")
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u8(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as u8)
+        visitor.visit_u8(self.expect_i::<_, u8>()?)
     }
 
     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u16(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as u16)
+        visitor.visit_u16(self.expect_i::<_, u16>()?)
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u32(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as u32)
+        visitor.visit_u32(self.expect_i::<_, u32>()?)
     }
+
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        visitor.visit_u64(i64::from(
-            self.input
-                .expect_ref::<Integer, _>()
-                .ok_or(Error::ExpectedInteger)?,
-        ) as u64)
+        unimplemented!("bignums")
     }
 
     // Float parsing is stupidly hard.
@@ -125,11 +136,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_f32(f64::from(
-            self.input
-                .expect_ref::<Rational, _>()
-                .ok_or(Error::ExpectedRational)?,
-        ) as f32)
+        visitor.visit_f32(self.expect_rational::<f32>()?)
     }
 
     // Float parsing is stupidly hard.
@@ -137,21 +144,15 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        visitor.visit_f64(f64::from(
-            self.input
-                .expect_ref::<Rational, _>()
-                .ok_or(Error::ExpectedRational)?,
-        ))
+        visitor.visit_f64(self.expect_rational::<f64>()?)
     }
-    fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value>
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        unimplemented!()
+        visitor.visit_char(self.expect_char()?)
     }
 
-    // Refer to the "Understanding deserializer lifetimes" page for information
-    // about the three deserialization flavors of strings in Serde.
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
@@ -245,7 +246,6 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        // need
         let assoc_list = AssocList { de: self };
         visitor.visit_map(assoc_list)
     }
@@ -264,27 +264,27 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let s = self
-            .input
-            .expect_ref::<Symbol, _>()
-            .ok_or(Error::ExpectedSymbol)?;
-        visitor.visit_string(s.to_string())
+        visitor.visit_string(self.expect_symbol()?.to_string())
     }
+
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
-        self.input.0.to_ref().fold(frunk::hlist![
-            |b: &Bool| unimplemented!(),
-            |c: &Char| unimplemented!(),
-            |i: &Integer| unimplemented!(),
-            |i: &Rational| visitor.visit_f64(f64::from(i)),
+        // TODO: There must be a better way of doing this
+        let cell = cell::RefCell::new(Some(visitor));
+        let r: Result<V::Value> = self.input.0.to_ref().fold(frunk::hlist![
+            |b: &Bool| (&mut cell.borrow_mut()).take().unwrap().visit_bool(b.into()),
+            |c: &Char| (&mut cell.borrow_mut()).take().unwrap().visit_char(char::from(c)),
+            |i: &Integer|  (&mut cell.borrow_mut()).take().unwrap().visit_i32(i32::from(i)),
+            |i: &Rational| (&mut cell.borrow_mut()).take().unwrap().visit_f32(f32::from(i)),
             |n: &Null| unimplemented!(),
             |p: &Pair<'a>| unimplemented!(),
             |s: &String<'a>| unimplemented!(),
             |s: &Exception<'a>| unimplemented!(),
             |s: &Symbol<'a>| unimplemented!()
-        ])
+        ]);
+        unimplemented!()
     }
 }
 
@@ -362,7 +362,7 @@ fn test_struct() {
     #[derive(Deserialize, PartialEq, Debug)]
     struct Foo {
         bar: bool,
-        foo: i64,
+        foo: i32,
         baz: f64,
     }
 
@@ -397,4 +397,21 @@ fn test_position_struct() {
         z: 1.0,
     };
     assert_eq!(expected, from_sexp(foo).unwrap());
+}
+
+#[test]
+fn test_casting() {
+    assert_eq!(1 as i8, 1);
+    let x: i64 = 12312324;
+    assert_eq!(x as i8, 4);
+}
+
+#[test]
+fn test_expected_boolean() {
+    let c = SExp::from(Integer::from(12));
+    let expected = true;
+    assert_eq!(
+        Some(Error::ExpectedBoolean("12".to_string())),
+        from_sexp::<bool>(c).err()
+    );
 }
