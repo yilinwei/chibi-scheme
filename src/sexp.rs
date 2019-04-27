@@ -35,7 +35,6 @@ pub enum SExp<'a> {
 
 impl <'a> ops::Deref for SExp<'a> {
     type Target = RawSExp<'a>;
-
     fn deref(&self) -> &Self::Target {
         match self {
             SExp::String(s) => s,
@@ -259,7 +258,7 @@ impl fmt::Debug for Integer {
 
 impl PartialEq for Integer {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        i64::from(self) == i64::from(self)
+        i64::from(self) == i64::from(rhs)
     }
 }
 
