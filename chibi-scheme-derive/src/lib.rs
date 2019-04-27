@@ -1,3 +1,4 @@
+#![recursion_limit="128"]
 extern crate proc_macro;
 
 use crate::proc_macro::TokenStream;
@@ -35,6 +36,13 @@ fn impl_sexp_macro(ast: &syn::DeriveInput) -> TokenStream {
                         if let Some(context) = self.context {
                             unsafe { chibi_scheme_sys::sexp_release_object(context.0, self.sexp)}
                         }
+                    }
+                }
+                impl<#lifetime> PartialEq for #name<#lifetime> {
+                    fn eq(self: &Self, rhs: &Self) -> bool {
+                        chibi_scheme_sys::sexp_truep(
+                            chibi_scheme_sys::sexp_equalp(self.context.unwrap().0, self.sexp, rhs.sexp)
+                        )
                     }
                 }
             },

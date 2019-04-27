@@ -89,32 +89,18 @@ impl String<'_> {
     }
 }
 
-impl PartialEq for String<'_> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_truep(sexp_equalp(self.context.unwrap().0, self.sexp, rhs.sexp))
-    }
-}
-
 impl fmt::Debug for String<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.write_fmt(format_args!("\"{:?}\"", self.data()))
     }
 }
 
+#[derive(SExp)]
 pub struct Pair<'a>(RawSExp<'a>);
 
 impl <'a> From<Pair<'a>> for SExp<'a> {
     fn from(p: Pair) -> SExp {
         SExp::Pair(p)
-    }
-}
-
-//TODO: Macro please
-impl <'a> ops::Deref for Pair<'a> {
-    type Target = RawSExp<'a>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
@@ -137,12 +123,6 @@ impl <'a> Pair<'a> {
 
     pub fn is_list(&self) -> bool {
         sexp_truep(sexp_listp(self.context.unwrap().0, self.sexp))
-    }
-}
-
-impl<'a> PartialEq for Pair<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_truep(sexp_equalp(self.context.unwrap().0, self.sexp, rhs.sexp))
     }
 }
 
@@ -196,12 +176,6 @@ impl <'a> From<&Symbol<'a>> for String<'a> {
             sexp: sexp_symbol_to_string(s.context.unwrap().0, s.sexp),
             context: s.context
         })
-    }
-}
-
-impl<'a> PartialEq for Symbol<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_truep(sexp_equalp(self.context.unwrap().0, self.sexp, rhs.sexp))
     }
 }
 
@@ -302,12 +276,6 @@ impl From<&Rational<'_>> for f64 {
 impl<'a> fmt::Debug for Rational<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.write_fmt(format_args!("{}", f64::from(self)))
-    }
-}
-
-impl<'a> PartialEq for Rational<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        f64::from(self) == f64::from(rhs)
     }
 }
 
