@@ -2,9 +2,11 @@ use chibi_scheme_sys::*;
 use std::ffi;
 use std::fmt;
 use std::ptr;
+use std::convert::TryInto;
 use std::slice;
 use std::string;
 use std::ops;
+use std::os::raw;
 use chibi_scheme_derive::SExp;
 
 pub struct RawSExp<'a>{
@@ -21,6 +23,7 @@ impl RawSExp<'_> {
     }
 }
 
+#[derive(PartialEq)]
 pub enum SExp<'a> {
     String(String<'a>),
     Bool(Bool),
@@ -181,6 +184,12 @@ impl From<&Char> for char {
     }
 }
 
+impl From<char> for Char {
+    fn from(c: char) -> Char {
+        Char(RawSExp::new(sexp_make_character(c as _)))
+    }
+}
+
 impl fmt::Debug for Char {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.write_fmt(format_args!("#\\{}", char::from(self)))
@@ -308,6 +317,8 @@ impl<'a> From<RawSExp<'a>> for SExp<'a> {
             String(sexp).into()
         } else if sexp_flonump(sexp.sexp) {
             Rational(sexp).into()
+        } else if sexp_symbolp(sexp.sexp) {
+            Symbol(sexp).into()
         } else if sexp_exceptionp(sexp.sexp) {
             Exception(sexp).into()
         } else {
@@ -371,11 +382,9 @@ mod tests {
     fn test_pair() {
         let context = Context::default();
         assert_eq!(
-            Some(context.cons(&SExp::from(Char::from('c')), &SExp::from(Bool::FALSE))),
+            Ok(context.cons(&Char::from('c').into(), &FALSE.into())),
             context
                 .eval_string("'(#\\c . #f)")
-                .unwrap()
-                .expect::<Pair, _>()
         );
 
         assert_eq!(
@@ -402,59 +411,38 @@ mod tests {
             format!("{:?}", context.eval_string("'(x . 1)").unwrap())
         );
 
-        // We now require generic serialization
-        // frunnk has a labelled generic (with a Repr)
-        // we need to take the repr, and transform field names into symbols and values into values
-        // first let's just write the methods
-        let pair_struct_string = "'((x . 1) (y . 2))";
-        let pair_struct = context
-            .eval_string(pair_struct_string)
-            .unwrap()
-            .expect::<Pair, _>()
-            .unwrap();
-        let pair_x = pair_struct.car().expect::<Pair, _>().unwrap();
-        let x_symbol = pair_x.car().expect::<Symbol, _>().unwrap();
-        let x_value = pair_x.cdr().expect::<Integer, _>().unwrap();
-        let pair_y = pair_struct.cdr().expect::<Pair, _>().unwrap();
-        let x_value_i64: i64 = x_value.into();
-        assert_eq!(x_value_i64, 1)
     }
 
-    // #[test]
-    // fn test_null() {
-    //     let context = Context::default();
-    //     assert_eq!(
-    //         context.eval_string("'()").unwrap().0.take::<Null, _>(),
-    //         Some(NULL)
-    //     );
-    // }
+    #[test]
+    fn test_null() {
+        let context = Context::default();
+        assert_eq!(
+            context.eval_string("'()"),
+            Ok(NULL.into())
+        );
+    }
 
-    // #[test]
-    // fn test_bool() {
-    //     let context = Context::default();
-    //     assert_eq!(
-    //         context.eval_string("#t").unwrap().0.take::<Bool, _>(),
-    //         Some(true.into())
-    //     );
-    //     assert_eq!(
-    //         context.eval_string("#f").unwrap().expect::<Bool, _>(),
-    //         Some(false.into())
-    //     );
-    //     assert_eq!(context.eval_string("#t").unwrap().expect::<Char, _>(), None);
-    // }
+    #[test]
+    fn test_bool() {
+        let context = Context::default();
+        assert_eq!(
+            context.eval_string("#t"),
+            Ok(TRUE.into())
+        );
+        assert_eq!(
+            context.eval_string("#f"),
+            Ok(FALSE.into())
+        );
+    }
 
-    // #[test]
-    // fn test_char() {
-    //     let context = Context::default();
-
-    //         context.eval_string("#\\s").unwrap().expect::<Bool, _>(),
-    //         None
-    //     );
-    //     assert_eq!(
-    //         context.eval_string("#\\h").unwrap().expect::<Char, _>(),
-    //         Some('h'.into())
-    //     )
-    // }
+    #[test]
+    fn test_char() {
+        let context = Context::default();
+        assert_eq!(
+            context.eval_string("#\\h"),
+            Ok(Char::from('h').into())
+        );
+    }
 
     // #[test]
     // fn test_integer() {

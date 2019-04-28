@@ -73,6 +73,10 @@ pub fn sexp_lsymbolp(x: sexp) -> bool {
     sexp_check_tag(x, sexp_types_SEXP_SYMBOL)
 }
 
+pub fn sexp_symbolp(x: sexp) -> bool {
+    sexp_isymbolp(x) || sexp_lsymbolp(x)
+}
+
 pub fn sexp_charp(x: sexp) -> bool {
     ((x as sexp_uint_t) & SEXP_EXTENDED_MASK as sexp_uint_t) == SEXP_CHAR_TAG as sexp_uint_t
 }
