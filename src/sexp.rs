@@ -69,12 +69,6 @@ impl<'a> fmt::Debug for SExp<'a> {
 #[derive(SExp)]
 pub struct String<'a>(RawSExp<'a>);
 
-impl <'a> From<String<'a>> for SExp<'a> {
-    fn from(s: String) -> SExp {
-        SExp::String(s)
-    }
-}
-
 impl String<'_> {
 
     fn len(&self) -> usize {
@@ -96,12 +90,6 @@ impl fmt::Debug for String<'_> {
 
 #[derive(SExp)]
 pub struct Pair<'a>(RawSExp<'a>);
-
-impl <'a> From<Pair<'a>> for SExp<'a> {
-    fn from(p: Pair) -> SExp {
-        SExp::Pair(p)
-    }
-}
 
 impl <'a> Pair<'a> {
     pub fn car<'b>(&'b self) -> SExp<'a> {
@@ -240,7 +228,7 @@ pub struct Integer(RawSExp<'static>);
 
 impl From<i64> for Integer {
     fn from(i: i64) -> Integer {
-        Integer(RawSExp::new(sexp_make_fixnum(i as _)))
+        Integer(RawSExp::new(sexp_make_fixnum(i)))
     }
 }
 
@@ -304,20 +292,24 @@ impl<'a> From<RawSExp<'a>> for SExp<'a> {
     fn from(sexp: RawSExp<'a>) -> SExp<'a> {
         if sexp_booleanp(sexp.sexp) {
             if sexp_truep(sexp.sexp) {
-                SExp::Bool(TRUE)
+                TRUE.into()
             } else {
-                SExp::Bool(FALSE)
+                FALSE.into()
             }
         } else if sexp_charp(sexp.sexp) {
-            SExp::Char(Char(RawSExp::new(sexp.sexp)))
+            Char(RawSExp::new(sexp.sexp)).into()
         } else if sexp_nullp(sexp.sexp) {
-            SExp::Null(NULL)
+            NULL.into()
+        } else if sexp_integerp(sexp.sexp) {
+            Integer(RawSExp::new(sexp.sexp)).into()
         } else if sexp_pairp(sexp.sexp) {
-            SExp::Pair(Pair(sexp))
+            Pair(sexp).into()
         } else if sexp_stringp(sexp.sexp) {
-            SExp::String(String(sexp))
+            String(sexp).into()
         } else if sexp_flonump(sexp.sexp) {
-            SExp::Rational(Rational(sexp))
+            Rational(sexp).into()
+        } else if sexp_exceptionp(sexp.sexp) {
+            Exception(sexp).into()
         } else {
             unreachable!()
         }
@@ -354,9 +346,9 @@ impl Context {
             context: Some(self)
         };
         if !sexp_exceptionp(sexp.sexp) {
-            SExp::Pair(Pair(sexp))
+            Pair(sexp).into()
         } else {
-            SExp::Exception(Exception(sexp))
+            Exception(sexp).into()
         }
     }
 

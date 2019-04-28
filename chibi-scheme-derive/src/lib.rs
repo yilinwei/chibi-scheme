@@ -45,6 +45,11 @@ fn impl_sexp_macro(ast: &syn::DeriveInput) -> TokenStream {
                         )
                     }
                 }
+                impl <#lifetime> From<#name<#lifetime>> for crate::sexp::SExp<#lifetime> {
+                    fn from(sexp: #name) -> crate::sexp::SExp {
+                        crate::sexp::SExp::#name(sexp)
+                    }
+                }
             },
         None =>
             quote! {
@@ -52,6 +57,11 @@ fn impl_sexp_macro(ast: &syn::DeriveInput) -> TokenStream {
                     type Target = crate::sexp::RawSExp<'static>;
                     fn deref(&self) -> &Self::Target {
                         &self.0
+                    }
+                }
+                impl From<#name> for crate::sexp::SExp<'static> {
+                    fn from(sexp: #name) -> crate::sexp::SExp<'static> {
+                        crate::sexp::SExp::#name(sexp)
                     }
                 }
             },
