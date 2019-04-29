@@ -397,8 +397,6 @@ impl Context {
 mod tests {
 
     use crate::sexp::*;
-    use crate::*;
-    use std::ffi;
 
     #[test]
     fn test_pair() {
