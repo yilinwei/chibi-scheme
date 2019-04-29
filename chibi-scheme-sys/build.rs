@@ -69,7 +69,7 @@ fn main() {
             "FP_INT_DOWNWARD".into(),
             "FP_INT_TOWARDZERO".into(),
             "FP_INT_TONEARESTFROMZERO".into(),
-            "FP_INT_TONEAREST".into()
+            "FP_INT_TONEAREST".into(),
         ].into_iter()
         .collect(),
     );
@@ -83,9 +83,6 @@ fn main() {
         .write_to_file(format!("{}/bindings.rs", out_dir))
         .expect("Could not write bindings");
 
-    println!(
-        "cargo:rustc-link-search=native={}/chibi-scheme/",
-        &out_dir
-    );
+    println!("cargo:rustc-link-search=native={}/chibi-scheme/", &out_dir);
     println!("cargo:rustc-link-lib=chibi-scheme");
 }

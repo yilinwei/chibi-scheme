@@ -1,22 +1,22 @@
+use chibi_scheme_derive::SExp;
 use chibi_scheme_sys::*;
 use std::ffi;
 use std::fmt;
-use std::ptr;
-use std::slice;
 use std::ops;
 use std::os::raw;
-use chibi_scheme_derive::SExp;
+use std::ptr;
+use std::slice;
 
-pub struct RawSExp<'a>{
+pub struct RawSExp<'a> {
     sexp: sexp,
-    context: Option<&'a Context>
+    context: Option<&'a Context>,
 }
 
 impl RawSExp<'_> {
     const fn new(sexp: sexp) -> Self {
         RawSExp {
             sexp: sexp,
-            context: None
+            context: None,
         }
     }
 }
@@ -32,10 +32,10 @@ pub enum SExp<'a> {
     Symbol(Symbol<'a>),
     Pair(Pair<'a>),
     Exception(Exception<'a>),
-    Void(Void)
+    Void(Void),
 }
 
-impl <'a> ops::Deref for SExp<'a> {
+impl<'a> ops::Deref for SExp<'a> {
     type Target = RawSExp<'a>;
     fn deref(&self) -> &Self::Target {
         match self {
@@ -48,7 +48,7 @@ impl <'a> ops::Deref for SExp<'a> {
             SExp::Symbol(s) => s,
             SExp::Pair(p) => p,
             SExp::Exception(e) => e,
-            SExp::Void(v) => v
+            SExp::Void(v) => v,
         }
     }
 }
@@ -65,7 +65,7 @@ impl<'a> fmt::Debug for SExp<'a> {
             SExp::Exception(e) => e.fmt(fmt),
             SExp::Rational(r) => r.fmt(fmt),
             SExp::Symbol(s) => s.fmt(fmt),
-            SExp::Void(v) => v.fmt(fmt)
+            SExp::Void(v) => v.fmt(fmt),
         }
     }
 }
@@ -74,7 +74,6 @@ impl<'a> fmt::Debug for SExp<'a> {
 pub struct String<'a>(RawSExp<'a>);
 
 impl String<'_> {
-
     fn len(&self) -> usize {
         sexp_string_size(self.sexp) as usize
     }
@@ -96,11 +95,11 @@ impl fmt::Debug for String<'_> {
 #[derive(SExp)]
 pub struct Pair<'a>(RawSExp<'a>);
 
-impl <'a> Pair<'a> {
+impl<'a> Pair<'a> {
     pub fn car<'b>(&'b self) -> SExp<'a> {
         let sexp = RawSExp {
             sexp: sexp_car(self.sexp),
-            context: self.context
+            context: self.context,
         };
         sexp.into()
     }
@@ -108,7 +107,7 @@ impl <'a> Pair<'a> {
     pub fn cdr<'b>(&'b self) -> SExp<'a> {
         let sexp = RawSExp {
             sexp: sexp_cdr(self.sexp),
-            context: self.context
+            context: self.context,
         };
         sexp.into()
     }
@@ -126,7 +125,7 @@ impl<'a> fmt::Debug for Pair<'a> {
             let mut t = self.cdr();
             while match t {
                 SExp::Null(_) => false,
-                _ => true
+                _ => true,
             } {
                 if let SExp::Pair(pair) = t {
                     h.fmt(fmt)?;
@@ -152,7 +151,6 @@ impl fmt::Debug for Null {
 }
 
 pub const NULL: Null = Null(RawSExp::new(SEXP_NULL));
-
 
 impl PartialEq for Null {
     fn eq(self: &Self, _rhs: &Self) -> bool {
@@ -180,11 +178,11 @@ impl PartialEq for Void {
 #[derive(SExp)]
 pub struct Symbol<'a>(RawSExp<'a>);
 
-impl <'a> From<&Symbol<'a>> for String<'a> {
+impl<'a> From<&Symbol<'a>> for String<'a> {
     fn from(s: &Symbol<'a>) -> String<'a> {
         String(RawSExp {
             sexp: sexp_symbol_to_string(s.context.unwrap().0, s.sexp),
-            context: s.context
+            context: s.context,
         })
     }
 }
@@ -212,7 +210,10 @@ impl From<raw::c_char> for Char {
 
 impl fmt::Debug for Char {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt.write_fmt(format_args!("#\\{}", (raw::c_char::from(self) as u8) as char))
+        fmt.write_fmt(format_args!(
+            "#\\{}",
+            (raw::c_char::from(self) as u8) as char
+        ))
     }
 }
 
@@ -236,8 +237,7 @@ impl From<&Bool> for bool {
 
 impl PartialEq for Bool {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_truep(self.sexp) && sexp_truep(rhs.sexp) ||
-            sexp_not(self.sexp) && sexp_not(rhs.sexp)
+        sexp_truep(self.sexp) && sexp_truep(rhs.sexp) || sexp_not(self.sexp) && sexp_not(rhs.sexp)
     }
 }
 
@@ -302,7 +302,7 @@ impl Exception<'_> {
     fn message(&self) -> String {
         String(RawSExp {
             sexp: sexp_exception_message(self.sexp),
-            context: self.context
+            context: self.context,
         })
     }
 }
@@ -352,7 +352,9 @@ impl<'a> From<RawSExp<'a>> for SExp<'a> {
 impl Default for Context {
     fn default() -> Self {
         //TODO: switch to different default
-        Context(unsafe {sexp_make_eval_context(ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), 0, 0) })
+        Context(unsafe {
+            sexp_make_eval_context(ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), 0, 0)
+        })
     }
 }
 
@@ -363,11 +365,12 @@ impl Drop for Context {
 }
 
 impl Context {
-
     pub fn eval_string(&self, str: &str) -> Result<SExp, Exception> {
         let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
         let sexp = RawSExp {
-            sexp: unsafe { sexp_eval_string(self.0, c_str.as_ptr(), str.len() as _, ptr::null_mut()) },
+            sexp: unsafe {
+                sexp_eval_string(self.0, c_str.as_ptr(), str.len() as _, ptr::null_mut())
+            },
             context: Some(self),
         };
         if sexp_exceptionp(sexp.sexp) {
@@ -378,7 +381,7 @@ impl Context {
     }
 
     //TODO: Return env
-    pub fn standard_env(&mut self) -> Result<(), Exception>{
+    pub fn standard_env(&mut self) -> Result<(), Exception> {
         let sexp = unsafe { sexp_load_standard_env(self.0, ptr::null_mut(), SEXP_SEVEN) };
         if sexp_exceptionp(sexp) {
             let raw_sexp = RawSExp {
@@ -393,7 +396,7 @@ impl Context {
     pub fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> SExp {
         let sexp = RawSExp {
             sexp: sexp_cons(self.0, a.sexp, b.sexp),
-            context: Some(self)
+            context: Some(self),
         };
         if !sexp_exceptionp(sexp.sexp) {
             Pair(sexp).into()
@@ -406,7 +409,7 @@ impl Context {
         let sexp = unsafe { sexp_make_flonum(self.0, i) };
         Rational(RawSExp {
             sexp: sexp,
-            context: Some(self)
+            context: Some(self),
         })
     }
 
@@ -416,7 +419,7 @@ impl Context {
         let sexp = unsafe { sexp_c_string(self.0, c_str.as_ptr(), len as _) };
         String(RawSExp {
             sexp: sexp,
-            context: Some(self)
+            context: Some(self),
         })
     }
 
@@ -426,7 +429,7 @@ impl Context {
         let sexp = unsafe { sexp_intern(self.0, c_str.as_ptr(), len as _) };
         Symbol(RawSExp {
             sexp: sexp,
-            context: Some(self)
+            context: Some(self),
         })
     }
 }
@@ -440,8 +443,7 @@ mod tests {
         let context = Context::default();
         assert_eq!(
             Ok(context.cons(&Char::from('c' as raw::c_char).into(), &FALSE.into())),
-            context
-                .eval_string("'(#\\c . #f)")
+            context.eval_string("'(#\\c . #f)")
         );
 
         assert_eq!(
@@ -467,29 +469,19 @@ mod tests {
             "(\"x\" . 1)",
             format!("{:?}", context.eval_string("'(x . 1)").unwrap())
         );
-
     }
 
     #[test]
     fn test_null() {
         let context = Context::default();
-        assert_eq!(
-            context.eval_string("'()"),
-            Ok(NULL.into())
-        );
+        assert_eq!(context.eval_string("'()"), Ok(NULL.into()));
     }
 
     #[test]
     fn test_bool() {
         let context = Context::default();
-        assert_eq!(
-            context.eval_string("#t"),
-            Ok(TRUE.into())
-        );
-        assert_eq!(
-            context.eval_string("#f"),
-            Ok(FALSE.into())
-        );
+        assert_eq!(context.eval_string("#t"), Ok(TRUE.into()));
+        assert_eq!(context.eval_string("#f"), Ok(FALSE.into()));
     }
 
     #[test]
@@ -504,21 +496,15 @@ mod tests {
     #[test]
     fn test_integer() {
         let context = Context::default();
-        assert_eq!(
-            context
-                .eval_string("(+ 1 3)"),
-            Ok(Integer::from(4).into())
-        );
+        assert_eq!(context.eval_string("(+ 1 3)"), Ok(Integer::from(4).into()));
 
         assert_eq!(
-            context
-                .eval_string(&SEXP_MAX_FIXNUM.to_string()),
+            context.eval_string(&SEXP_MAX_FIXNUM.to_string()),
             Ok(Integer::from(SEXP_MAX_FIXNUM).into())
         );
 
         assert_eq!(
-            context
-                .eval_string(&SEXP_MIN_FIXNUM.to_string()),
+            context.eval_string(&SEXP_MIN_FIXNUM.to_string()),
             Ok(Integer::from(SEXP_MIN_FIXNUM).into())
         );
     }
@@ -527,22 +513,25 @@ mod tests {
     fn test_rational() {
         let context = Context::default();
         assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
-        assert_eq!(
-            context.eval_string("4.5"),
-            Ok(context.flonum(4.5).into())
-        );
+        assert_eq!(context.eval_string("4.5"), Ok(context.flonum(4.5).into()));
     }
 
     #[test]
     fn test_string() {
         let context = Context::default();
-        assert_eq!(Ok(context.string("foo").into()), context.eval_string("\"foo\""));
+        assert_eq!(
+            Ok(context.string("foo").into()),
+            context.eval_string("\"foo\"")
+        );
     }
 
     #[test]
     fn test_symbol() {
         let context = Context::default();
-        assert_eq!(Ok(context.intern("foo").into()), context.eval_string("'foo"));
+        assert_eq!(
+            Ok(context.intern("foo").into()),
+            context.eval_string("'foo")
+        );
     }
 
     #[test]
@@ -550,7 +539,10 @@ mod tests {
         let mut context = Context::default();
         context.standard_env().unwrap();
         context.eval_string("(import (srfi 1))").unwrap();
-        assert_eq!(Ok(Integer::from(1).into()), context.eval_string("(first '(1 2))"));
+        assert_eq!(
+            Ok(Integer::from(1).into()),
+            context.eval_string("(first '(1 2))")
+        );
     }
 
 }
