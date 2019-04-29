@@ -288,8 +288,7 @@ impl Exception<'_> {
 
 impl<'a> fmt::Debug for Exception<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        //TODO: What should this be printed as?
-        fmt.write_fmt(format_args!("Exception: {:?}", self.message()))
+        fmt.write_fmt(format_args!("error: {:?}", self.message()))
     }
 }
 
@@ -369,6 +368,26 @@ impl Context {
     pub fn flonum(&self, i: f64) -> Rational {
         let sexp = unsafe { sexp_make_flonum(self.0, i) };
         Rational(RawSExp {
+            sexp: sexp,
+            context: Some(self)
+        })
+    }
+
+    pub fn string(&self, str: &str) -> String {
+        let len = str.len();
+        let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
+        let sexp = unsafe { sexp_c_string(self.0, c_str.as_ptr(), len as _) };
+        String(RawSExp {
+            sexp: sexp,
+            context: Some(self)
+        })
+    }
+
+    pub fn intern(&self, str: &str) -> Symbol {
+        let len = str.len();
+        let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
+        let sexp = unsafe { sexp_intern(self.0, c_str.as_ptr(), len as _) };
+        Symbol(RawSExp {
             sexp: sexp,
             context: Some(self)
         })
@@ -469,39 +488,25 @@ mod tests {
         );
     }
 
-    // // // TODO: What are the constraints of the system?
-    // // #[test]
-    // // fn test_rational() {
-    // //     let context = Context::default();
-    // //     assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
+    #[test]
+    fn test_rational() {
+        let context = Context::default();
+        assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
+        assert_eq!(
+            context.eval_string("4.5"),
+            Ok(context.flonum(4.5).into())
+        );
+    }
 
-    // //     context.make_flonum(4.5);
-    // // }
+    #[test]
+    fn test_string() {
+        let context = Context::default();
+        assert_eq!(Ok(context.string("foo").into()), context.eval_string("\"foo\""));
+    }
 
-    // // #[test]
-    // // fn test_string() {
-    // //     let context = Context::default();
-    // //     let foo = context
-    // //         .eval_string("\"foo\"")
-    // //         .unwrap()
-    // //         .expect::<String, _>();
-
-    // //     let bar = context
-    // //         .eval_string("\"bar\"")
-    // //         .unwrap()
-    // //         .expect::<String, _>();
-    // //     assert_eq!(foo, foo);
-    // //     assert_ne!(foo, bar);
-    // //     assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
-    // // }
-
-    // // #[test]
-    // // fn test_symbol() {
-    // //     let context = Context::default();
-    // //     let foo = context.eval_string("'foo").unwrap().expect::<Symbol, _>();
-
-    // //     let bar = context.eval_string("'bar").unwrap().expect::<Symbol, _>();
-    // //     assert_eq!(foo, foo);
-    // //     assert_ne!(foo, bar);
-    // // }
+    #[test]
+    fn test_symbol() {
+        let context = Context::default();
+        assert_eq!(Ok(context.intern("foo").into()), context.eval_string("'foo"));
+    }
 }
