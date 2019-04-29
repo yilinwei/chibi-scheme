@@ -31,7 +31,8 @@ pub enum SExp<'a> {
     Null(Null),
     Symbol(Symbol<'a>),
     Pair(Pair<'a>),
-    Exception(Exception<'a>)
+    Exception(Exception<'a>),
+    Void(Void)
 }
 
 impl <'a> ops::Deref for SExp<'a> {
@@ -46,7 +47,8 @@ impl <'a> ops::Deref for SExp<'a> {
             SExp::Null(n) => n,
             SExp::Symbol(s) => s,
             SExp::Pair(p) => p,
-            SExp::Exception(e) => e
+            SExp::Exception(e) => e,
+            SExp::Void(v) => v
         }
     }
 }
@@ -62,7 +64,8 @@ impl<'a> fmt::Debug for SExp<'a> {
             SExp::String(s) => s.fmt(fmt),
             SExp::Exception(e) => e.fmt(fmt),
             SExp::Rational(r) => r.fmt(fmt),
-            SExp::Symbol(s) => s.fmt(fmt)
+            SExp::Symbol(s) => s.fmt(fmt),
+            SExp::Void(v) => v.fmt(fmt)
         }
     }
 }
@@ -150,7 +153,25 @@ impl fmt::Debug for Null {
 
 pub const NULL: Null = Null(RawSExp::new(SEXP_NULL));
 
+
 impl PartialEq for Null {
+    fn eq(self: &Self, _rhs: &Self) -> bool {
+        true
+    }
+}
+
+#[derive(SExp)]
+pub struct Void(RawSExp<'static>);
+
+impl fmt::Debug for Void {
+    fn fmt(&self, _fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        Ok(())
+    }
+}
+
+pub const VOID: Void = Void(RawSExp::new(SEXP_VOID));
+
+impl PartialEq for Void {
     fn eq(self: &Self, _rhs: &Self) -> bool {
         true
     }
@@ -303,6 +324,8 @@ impl<'a> From<RawSExp<'a>> for SExp<'a> {
             } else {
                 FALSE.into()
             }
+        } else if sexp.sexp == SEXP_VOID {
+            NULL.into()
         } else if sexp_charp(sexp.sexp) {
             Char(RawSExp::new(sexp.sexp)).into()
         } else if sexp_nullp(sexp.sexp) {
@@ -320,7 +343,8 @@ impl<'a> From<RawSExp<'a>> for SExp<'a> {
         } else if sexp_exceptionp(sexp.sexp) {
             Exception(sexp).into()
         } else {
-            unreachable!()
+            unimplemented!()
+            // panic!("Unexpacted type {:?}", sexp_pointer_tag(sexp.sexp))
         }
     }
 }
@@ -353,6 +377,19 @@ impl Context {
         }
     }
 
+    //TODO: Return env
+    pub fn standard_env(&mut self) -> Result<(), Exception>{
+        let sexp = unsafe { sexp_load_standard_env(self.0, ptr::null_mut(), SEXP_SEVEN) };
+        if sexp_exceptionp(sexp) {
+            let raw_sexp = RawSExp {
+                sexp: sexp,
+                context: Some(self),
+            };
+            Err(Exception(raw_sexp).into())
+        } else {
+            Ok(())
+        }
+    }
     pub fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> SExp {
         let sexp = RawSExp {
             sexp: sexp_cons(self.0, a.sexp, b.sexp),
@@ -507,4 +544,13 @@ mod tests {
         let context = Context::default();
         assert_eq!(Ok(context.intern("foo").into()), context.eval_string("'foo"));
     }
+
+    #[test]
+    fn test_standard_env() {
+        let mut context = Context::default();
+        context.standard_env().unwrap();
+        context.eval_string("(import (srfi 1))").unwrap();
+        assert_eq!(Ok(Integer::from(1).into()), context.eval_string("(first '(1 2))"));
+    }
+
 }

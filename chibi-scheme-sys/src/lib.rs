@@ -13,7 +13,7 @@ const fn sexp_make_immediate(n: u32) -> sexp {
     ((n << SEXP_EXTENDED_BITS) + SEXP_EXTENDED_TAG) as sexp
 }
 
-pub fn sexp_make_fixnum(n: i64) -> sexp {
+pub const fn sexp_make_fixnum(n: i64) -> sexp {
     (((n as sexp_sint_t) << SEXP_FIXNUM_BITS) + (SEXP_FIXNUM_TAG as sexp_sint_t)) as sexp
 }
 
@@ -41,7 +41,7 @@ pub const SEXP_VOID: sexp = sexp_make_immediate(4);
 
 pub const SEXP_MAX_FIXNUM: sexp_sint_t = (1 << (mem::size_of::<sexp_sint_t>() as u32 * 8 - SEXP_FIXNUM_BITS - 1) as sexp_sint_t) - 1;
 pub const SEXP_MIN_FIXNUM: sexp_sint_t = -SEXP_MAX_FIXNUM - 1;
-
+pub const SEXP_SEVEN: sexp = sexp_make_fixnum(7);
 pub fn sexp_truep(x: sexp) -> bool {
     x != SEXP_FALSE
 }
@@ -113,6 +113,10 @@ pub fn sexp_check_tag(x: sexp, t: sexp_tag_t) -> bool {
 
 pub fn sexp_stringp(x: sexp) -> bool {
     sexp_check_tag(x, sexp_types_SEXP_STRING)
+}
+
+pub fn sexp_envp(x: sexp) -> bool {
+    sexp_check_tag(x, sexp_types_SEXP_ENV)
 }
 
 pub fn sexp_pairp(x: sexp) -> bool {
