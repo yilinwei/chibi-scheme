@@ -2,9 +2,7 @@ use chibi_scheme_sys::*;
 use std::ffi;
 use std::fmt;
 use std::ptr;
-use std::convert::TryInto;
 use std::slice;
-use std::string;
 use std::ops;
 use std::os::raw;
 use chibi_scheme_derive::SExp;
@@ -78,10 +76,11 @@ impl String<'_> {
         sexp_string_size(self.sexp) as usize
     }
 
-    fn data(&self) -> &ffi::CStr {
+    fn data(&self) -> &str {
         let len = self.len() + 1;
         let slice = unsafe { slice::from_raw_parts(sexp_string_data(self.sexp) as _, len) };
-        unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) }
+        let str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) };
+        str.to_str().unwrap()
     }
 }
 
@@ -178,27 +177,27 @@ impl<'a> fmt::Debug for Symbol<'a> {
 #[derive(SExp)]
 pub struct Char(RawSExp<'static>);
 
-impl From<&Char> for char {
-    fn from(c: &Char) -> char {
-        (sexp_unbox_character(c.sexp) as u8) as char
+impl From<&Char> for raw::c_char {
+    fn from(c: &Char) -> raw::c_char {
+        sexp_unbox_character(c.sexp)
     }
 }
 
-impl From<char> for Char {
-    fn from(c: char) -> Char {
-        Char(RawSExp::new(sexp_make_character(c as _)))
+impl From<raw::c_char> for Char {
+    fn from(c: raw::c_char) -> Char {
+        Char(RawSExp::new(sexp_make_character(c)))
     }
 }
 
 impl fmt::Debug for Char {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt.write_fmt(format_args!("#\\{}", char::from(self)))
+        fmt.write_fmt(format_args!("#\\{}", (raw::c_char::from(self) as u8) as char))
     }
 }
 
 impl PartialEq for Char {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        char::from(self) == char::from(rhs)
+        raw::c_char::from(self) == raw::c_char::from(rhs)
     }
 }
 
@@ -342,13 +341,17 @@ impl Drop for Context {
 
 impl Context {
 
-    pub fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<SExp, ffi::NulError> {
-        let string = ffi::CString::new(t.into())?;
+    pub fn eval_string(&self, str: &str) -> Result<SExp, Exception> {
+        let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
         let sexp = RawSExp {
-            sexp: unsafe { sexp_eval_string(self.0, string.as_ptr(), -1, ptr::null_mut()) },
+            sexp: unsafe { sexp_eval_string(self.0, c_str.as_ptr(), str.len() as _, ptr::null_mut()) },
             context: Some(self),
         };
-        Ok(sexp.into())
+        if sexp_exceptionp(sexp.sexp) {
+            Err(Exception(sexp).into())
+        } else {
+            Ok(sexp.into())
+        }
     }
 
     pub fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> SExp {
@@ -382,7 +385,7 @@ mod tests {
     fn test_pair() {
         let context = Context::default();
         assert_eq!(
-            Ok(context.cons(&Char::from('c').into(), &FALSE.into())),
+            Ok(context.cons(&Char::from('c' as raw::c_char).into(), &FALSE.into())),
             context
                 .eval_string("'(#\\c . #f)")
         );
@@ -440,70 +443,65 @@ mod tests {
         let context = Context::default();
         assert_eq!(
             context.eval_string("#\\h"),
-            Ok(Char::from('h').into())
+            Ok(Char::from('h' as raw::c_char).into())
         );
     }
 
-    // #[test]
-    // fn test_integer() {
-    //     let context = Context::default();
-    //     assert_eq!(
-    //         context.eval_string("#\\s").unwrap().expect::<Integer, _>(),
-    //         None
-    //     );
-    //     assert_eq!(
-    //         context
-    //             .eval_string("(+ 1 3)")
-    //             .unwrap()
-    //             .expect::<Integer, _>(),
-    //         Some(4.into())
-    //     );
+    #[test]
+    fn test_integer() {
+        let context = Context::default();
+        assert_eq!(
+            context
+                .eval_string("(+ 1 3)"),
+            Ok(Integer::from(4).into())
+        );
 
-    //     // let max_value = "9223372036854775807";
-    //     let max_value = u32::max_value().to_string();
-    //     println!("Max value: {:}", max_value);
-    //     assert_eq!(
-    //         context
-    //             .eval_string(max_value)
-    //             .unwrap()
-    //             .expect::<Integer, _>(),
-    //         Some(i64::max_value().into())
-    //     )
-    // }
+        assert_eq!(
+            context
+                .eval_string(&SEXP_MAX_FIXNUM.to_string()),
+            Ok(Integer::from(SEXP_MAX_FIXNUM).into())
+        );
 
-    // // TODO: What are the constraints of the system?
-    // #[test]
-    // fn test_rational() {
-    //     let context = Context::default();
-    //     assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
+        assert_eq!(
+            context
+                .eval_string(&SEXP_MIN_FIXNUM.to_string()),
+            Ok(Integer::from(SEXP_MIN_FIXNUM).into())
+        );
+    }
 
-    //     context.make_flonum(4.5);
-    // }
+    // // // TODO: What are the constraints of the system?
+    // // #[test]
+    // // fn test_rational() {
+    // //     let context = Context::default();
+    // //     assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
 
-    // #[test]
-    // fn test_string() {
-    //     let context = Context::default();
-    //     let foo = context
-    //         .eval_string("\"foo\"")
-    //         .unwrap()
-    //         .expect::<String, _>();
+    // //     context.make_flonum(4.5);
+    // // }
 
-    //     let bar = context
-    //         .eval_string("\"bar\"")
-    //         .unwrap()
-    //         .expect::<String, _>();
-    //     assert_eq!(foo, foo);
-    //     assert_ne!(foo, bar);
-    //     assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
-    // }
+    // // #[test]
+    // // fn test_string() {
+    // //     let context = Context::default();
+    // //     let foo = context
+    // //         .eval_string("\"foo\"")
+    // //         .unwrap()
+    // //         .expect::<String, _>();
 
-    // #[test]
-    // fn test_symbol() {
-    //     let context = Context::default();
-    //     let foo = context.eval_string("'foo").unwrap().expect::<Symbol, _>();
+    // //     let bar = context
+    // //         .eval_string("\"bar\"")
+    // //         .unwrap()
+    // //         .expect::<String, _>();
+    // //     assert_eq!(foo, foo);
+    // //     assert_ne!(foo, bar);
+    // //     assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
+    // // }
 
-    //     let bar = context.eval_string("'bar").unwrap().expect::<Symbol, _>();
-    //     assert_eq!(foo, foo);
-    //     assert_ne!(foo, bar);
-    // }
+    // // #[test]
+    // // fn test_symbol() {
+    // //     let context = Context::default();
+    // //     let foo = context.eval_string("'foo").unwrap().expect::<Symbol, _>();
+
+    // //     let bar = context.eval_string("'bar").unwrap().expect::<Symbol, _>();
+    // //     assert_eq!(foo, foo);
+    // //     assert_ne!(foo, bar);
+    // // }
 }

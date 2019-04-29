@@ -4,6 +4,8 @@
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+use std::mem;
+
 use std::os::raw;
 use std::ptr;
 
@@ -36,6 +38,9 @@ pub const SEXP_TRUE: sexp = sexp_make_immediate(1);
 pub const SEXP_NULL: sexp = sexp_make_immediate(2);
 pub const SEXP_EOF: sexp = sexp_make_immediate(3);
 pub const SEXP_VOID: sexp = sexp_make_immediate(4);
+
+pub const SEXP_MAX_FIXNUM: sexp_sint_t = (1 << (mem::size_of::<sexp_sint_t>() as u32 * 8 - SEXP_FIXNUM_BITS - 1) as sexp_sint_t) - 1;
+pub const SEXP_MIN_FIXNUM: sexp_sint_t = -SEXP_MAX_FIXNUM - 1;
 
 pub fn sexp_truep(x: sexp) -> bool {
     x != SEXP_FALSE
