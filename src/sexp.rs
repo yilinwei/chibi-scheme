@@ -1,151 +1,138 @@
+use chibi_scheme_derive::SExp;
 use chibi_scheme_sys::*;
-use frunk;
-use std::cell;
 use std::ffi;
 use std::fmt;
-use std::mem;
+use std::ops;
+use std::os::raw;
 use std::ptr;
 use std::slice;
-use std::string;
 
-pub struct RawSExp<'a>(sexp, Option<&'a RawContext>);
+pub struct RawSExp<'a> {
+    sexp: sexp,
+    context: Option<&'a Context>,
+}
 
-impl Drop for RawSExp<'_> {
-    fn drop(&mut self) {
-        if RawContext::pointerp(self) {
-            unsafe { sexp_release_object(self.1.unwrap().0, self.0) }
+impl RawSExp<'_> {
+    const fn new(sexp: sexp) -> Self {
+        RawSExp {
+            sexp: sexp,
+            context: None,
         }
     }
 }
 
-// TODO: Add generic typing please
-pub type Coprod<'a> = frunk::Coprod!(
-    Bool,
-    Char,
-    Integer,
-    Rational<'a>,
-    Null,
-    Pair<'a>,
-    String<'a>,
-    Exception<'a>,
-    Symbol<'a>
-);
+#[derive(PartialEq)]
+pub enum SExp<'a> {
+    String(String<'a>),
+    Bool(Bool),
+    Char(Char),
+    Integer(Integer),
+    Rational(Rational<'a>),
+    Null(Null),
+    Symbol(Symbol<'a>),
+    Pair(Pair<'a>),
+    Exception(Exception<'a>),
+    Void(Void),
+}
 
-pub type CoprodRef<'c, 'r> = frunk::Coprod!(
-    &'r Bool,
-    &'r Char,
-    &'r Integer,
-    &'r Rational<'c>,
-    &'r Null,
-    &'r Pair<'c>,
-    &'r String<'c>,
-    &'r Exception<'c>,
-    &'r Symbol<'c>
-);
-
-pub struct SExp<'c>(pub(crate) Coprod<'c>);
-
-impl<'c> SExp<'c> {
-    pub fn from<T, Index>(t: T) -> SExp<'c>
-    where
-        Coprod<'c>: frunk::coproduct::CoprodInjector<T, Index>,
-    {
-        SExp(Coprod::inject(t))
-    }
-
-    pub fn expect<T, Index>(self) -> Option<T>
-    where
-        Coprod<'c>: frunk::coproduct::CoproductTaker<T, Index>,
-    {
-        self.0.take::<T, _>()
-    }
-
-    pub fn expect_ref<'a, T, Index>(&'a self) -> Option<&'a T>
-    where
-        CoprodRef<'c, 'a>: frunk::coproduct::CoproductTaker<&'a T, Index>,
-    {
-        self.0.to_ref().take::<&T, _>()
+impl<'a> ops::Deref for SExp<'a> {
+    type Target = RawSExp<'a>;
+    fn deref(&self) -> &Self::Target {
+        match self {
+            SExp::String(s) => s,
+            SExp::Bool(b) => b,
+            SExp::Char(c) => c,
+            SExp::Integer(i) => i,
+            SExp::Rational(r) => r,
+            SExp::Null(n) => n,
+            SExp::Symbol(s) => s,
+            SExp::Pair(p) => p,
+            SExp::Exception(e) => e,
+            SExp::Void(v) => v,
+        }
     }
 }
 
 impl<'a> fmt::Debug for SExp<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        // TODO: Change when PolyMut is merged
-        let cell = cell::RefCell::new(fmt);
-        self.0.to_ref().fold(frunk::hlist![
-            |b: &Bool| b.fmt(&mut cell.borrow_mut()),
-            |c: &Char| c.fmt(&mut cell.borrow_mut()),
-            |i: &Integer| i.fmt(&mut cell.borrow_mut()),
-            |i: &Rational| i.fmt(&mut cell.borrow_mut()),
-            |n: &Null| n.fmt(&mut cell.borrow_mut()),
-            |p: &Pair<'a>| p.fmt(&mut cell.borrow_mut()),
-            |s: &String<'a>| s.fmt(&mut cell.borrow_mut()),
-            |s: &Exception<'a>| s.fmt(&mut cell.borrow_mut()),
-            |s: &Symbol<'a>| s.fmt(&mut cell.borrow_mut())
-        ])
+        match self {
+            SExp::Bool(b) => b.fmt(fmt),
+            SExp::Char(c) => c.fmt(fmt),
+            SExp::Integer(i) => i.fmt(fmt),
+            SExp::Null(n) => n.fmt(fmt),
+            SExp::Pair(p) => p.fmt(fmt),
+            SExp::String(s) => s.fmt(fmt),
+            SExp::Exception(e) => e.fmt(fmt),
+            SExp::Rational(r) => r.fmt(fmt),
+            SExp::Symbol(s) => s.fmt(fmt),
+            SExp::Void(v) => v.fmt(fmt),
+        }
     }
 }
 
+#[derive(SExp)]
 pub struct String<'a>(RawSExp<'a>);
 
-impl<'a> String<'a> {
-    fn data(&'a self) -> &'a ffi::CStr {
-        RawContext::string_data(&self.0)
+impl String<'_> {
+    fn len(&self) -> usize {
+        sexp_string_size(self.sexp) as usize
+    }
+
+    fn data(&self) -> &str {
+        let len = self.len() + 1;
+        let slice = unsafe { slice::from_raw_parts(sexp_string_data(self.sexp) as _, len) };
+        let str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) };
+        str.to_str().unwrap()
     }
 }
 
-impl<'a> PartialEq for String<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        (self.0).1.unwrap().equalp(&self.0, &rhs.0)
-    }
-}
-
-impl<'a> fmt::Debug for String<'a> {
+impl fmt::Debug for String<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.write_fmt(format_args!("\"{:?}\"", self.data()))
     }
 }
 
+#[derive(SExp)]
 pub struct Pair<'a>(RawSExp<'a>);
 
 impl<'a> Pair<'a> {
     pub fn car<'b>(&'b self) -> SExp<'a> {
-        RawContext::car(&self.0).into()
+        let sexp = RawSExp {
+            sexp: sexp_car(self.sexp),
+            context: self.context,
+        };
+        sexp.into()
     }
 
     pub fn cdr<'b>(&'b self) -> SExp<'a> {
-        RawContext::cdr(&self.0).into()
+        let sexp = RawSExp {
+            sexp: sexp_cdr(self.sexp),
+            context: self.context,
+        };
+        sexp.into()
     }
-}
 
-impl<'a> PartialEq for Pair<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        (self.0).1.unwrap().equalp(&self.0, &rhs.0)
+    pub fn is_list(&self) -> bool {
+        sexp_truep(sexp_listp(self.context.unwrap().0, self.sexp))
     }
 }
 
 impl<'a> fmt::Debug for Pair<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if (self.0).1.unwrap().listp(&self.0) {
+        if self.is_list() {
             fmt.write_str("(")?;
             let mut h = self.car();
             let mut t = self.cdr();
-            while t.0.to_ref().fold(frunk::hlist![
-                |_| unreachable!(),
-                |_| unreachable!(),
-                |_| unreachable!(),
-                |_| unreachable!(),
-                |_: &Null| false,
-                |_: &Pair| true,
-                |_| unreachable!(),
-                |_| unreachable!(),
-                |_| unreachable!()
-            ]) {
-                h.fmt(fmt)?;
-                fmt.write_str(" ")?;
-                let pair = t.expect::<Pair, _>().unwrap();
-                h = pair.car();
-                t = pair.cdr();
+            while match t {
+                SExp::Null(_) => false,
+                _ => true,
+            } {
+                if let SExp::Pair(pair) = t {
+                    h.fmt(fmt)?;
+                    fmt.write_str(" ")?;
+                    h = pair.car();
+                    t = pair.cdr();
+                }
             }
             fmt.write_fmt(format_args!("{:?})", h))
         } else {
@@ -154,6 +141,7 @@ impl<'a> fmt::Debug for Pair<'a> {
     }
 }
 
+#[derive(SExp)]
 pub struct Null(RawSExp<'static>);
 
 impl fmt::Debug for Null {
@@ -162,7 +150,7 @@ impl fmt::Debug for Null {
     }
 }
 
-pub const NULL: Null = Null(RawSExp(SEXP_NULL, None));
+pub const NULL: Null = Null(RawSExp::new(SEXP_NULL));
 
 impl PartialEq for Null {
     fn eq(self: &Self, _rhs: &Self) -> bool {
@@ -170,95 +158,92 @@ impl PartialEq for Null {
     }
 }
 
-pub struct Symbol<'a>(RawSExp<'a>);
+#[derive(SExp)]
+pub struct Void(RawSExp<'static>);
 
-impl<'a> Symbol<'a> {
-    pub fn to_string(&self) -> std::string::String {
-        let s = (self.0).1.unwrap().symbol_to_string(&self.0);
-        s.data().to_str().unwrap().to_owned()
+impl fmt::Debug for Void {
+    fn fmt(&self, _fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        Ok(())
     }
 }
 
-impl<'a> PartialEq for Symbol<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        (self.0).1.unwrap().equalp(&self.0, &rhs.0)
+pub const VOID: Void = Void(RawSExp::new(SEXP_VOID));
+
+impl PartialEq for Void {
+    fn eq(self: &Self, _rhs: &Self) -> bool {
+        true
+    }
+}
+
+#[derive(SExp)]
+pub struct Symbol<'a>(RawSExp<'a>);
+
+impl<'a> From<&Symbol<'a>> for String<'a> {
+    fn from(s: &Symbol<'a>) -> String<'a> {
+        String(RawSExp {
+            sexp: sexp_symbol_to_string(s.context.unwrap().0, s.sexp),
+            context: s.context,
+        })
     }
 }
 
 impl<'a> fmt::Debug for Symbol<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let s = (self.0).1.unwrap().symbol_to_string(&self.0);
-        fmt.write_fmt(format_args!("{:?}", s.data()))
+        fmt.write_fmt(format_args!("{:?}", String::from(self).data()))
     }
 }
 
+#[derive(SExp)]
 pub struct Char(RawSExp<'static>);
 
-impl Into<char> for Char {
-    fn into(self: Self) -> char {
-        //TODO: Need to check casting
-        (sexp_unbox_character((self.0).0) as u8) as char
+impl From<&Char> for raw::c_char {
+    fn from(c: &Char) -> raw::c_char {
+        sexp_unbox_character(c.sexp)
     }
 }
 
-impl From<char> for Char {
-    fn from(c: char) -> Char {
-        //TODO: check
-        Char(RawSExp(sexp_make_character(c as _), None))
-    }
-}
-
-impl From<&Char> for char {
-    fn from(c: &Char) -> char {
-        (sexp_unbox_character((c.0).0) as u8) as char
+impl From<raw::c_char> for Char {
+    fn from(c: raw::c_char) -> Char {
+        Char(RawSExp::new(sexp_make_character(c)))
     }
 }
 
 impl fmt::Debug for Char {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt.write_fmt(format_args!("#\\{}", RawContext::unbox_character(&self.0)))
+        fmt.write_fmt(format_args!(
+            "#\\{}",
+            (raw::c_char::from(self) as u8) as char
+        ))
     }
 }
 
 impl PartialEq for Char {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        RawContext::unbox_character(&self.0) as char == RawContext::unbox_character(&rhs.0)
+        raw::c_char::from(self) == raw::c_char::from(rhs)
     }
 }
 
+#[derive(SExp)]
 pub struct Bool(RawSExp<'static>);
 
-impl Bool {
-    pub const TRUE: Bool = Bool(RawSExp(SEXP_TRUE, None));
-    pub const FALSE: Bool = Bool(RawSExp(SEXP_FALSE, None));
-}
-
-impl From<bool> for Bool {
-    fn from(b: bool) -> Bool {
-        if b {
-            Bool::TRUE
-        } else {
-            Bool::FALSE
-        }
-    }
-}
+pub const TRUE: Bool = Bool(RawSExp::new(SEXP_TRUE));
+pub const FALSE: Bool = Bool(RawSExp::new(SEXP_FALSE));
 
 impl From<&Bool> for bool {
     fn from(b: &Bool) -> bool {
-        RawContext::truep(&b.0)
+        sexp_truep(b.sexp)
     }
 }
 
 impl PartialEq for Bool {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        RawContext::truep(&self.0) && RawContext::truep(&rhs.0)
-            || RawContext::not(&self.0) && RawContext::not(&rhs.0)
+        sexp_truep(self.sexp) && sexp_truep(rhs.sexp) || sexp_not(self.sexp) && sexp_not(rhs.sexp)
     }
 }
 
 impl fmt::Debug for Bool {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        if RawContext::truep(&self.0) {
+        if sexp_truep(self.sexp) {
             fmt.write_str("#t")
         } else {
             fmt.write_str("#f")
@@ -267,297 +252,198 @@ impl fmt::Debug for Bool {
 }
 
 // A Fixnum http://www.chiark.greenend.org.uk/doc/mit-scheme-doc/html/mit-scheme-user/Fixnum-arithmetic.html#Fixnum-arithmetic
+#[derive(SExp)]
 pub struct Integer(RawSExp<'static>);
 
 impl From<i64> for Integer {
     fn from(i: i64) -> Integer {
-        Integer(RawSExp(sexp_make_fixnum(i as _), None))
-    }
-}
-
-impl From<Integer> for i64 {
-    fn from(i: Integer) -> i64 {
-        (sexp_unbox_fixnum((i.0).0) as u8) as i64
+        Integer(RawSExp::new(sexp_make_fixnum(i)))
     }
 }
 
 impl From<&Integer> for i64 {
     fn from(i: &Integer) -> i64 {
-        (sexp_unbox_fixnum((i.0).0) as u8) as i64
-    }
-}
-
-impl From<Integer> for i32 {
-    fn from(i: Integer) -> i32 {
-        (sexp_unbox_fixnum((i.0).0) as u8) as i32
-    }
-}
-
-impl From<&Integer> for i32 {
-    fn from(i: &Integer) -> i32 {
-        (sexp_unbox_fixnum((i.0).0) as u8) as i32
+        sexp_unbox_fixnum(i.sexp)
     }
 }
 
 impl fmt::Debug for Integer {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        fmt.write_fmt(format_args!("{}", RawContext::unbox_fixnum(&self.0)))
+        fmt.write_fmt(format_args!("{}", i64::from(self)))
     }
 }
 
 impl PartialEq for Integer {
     fn eq(self: &Self, rhs: &Self) -> bool {
-        RawContext::unbox_fixnum(&self.0) as i64 == RawContext::unbox_fixnum(&rhs.0)
+        i64::from(self) == i64::from(rhs)
     }
 }
 
 // https://groups.csail.mit.edu/mac/ftpdir/scheme-7.4/doc-html/scheme_5.html
+#[derive(SExp)]
 pub struct Rational<'a>(RawSExp<'a>);
 
-impl<'a> Into<f64> for Rational<'a> {
-    fn into(self: Self) -> f64 {
-        sexp_flonum_value((self.0).0)
-    }
-}
-
-impl<'a> From<&Rational<'a>> for f32 {
-    fn from(i: &Rational) -> f32 {
-        sexp_flonum_value((i.0).0) as f32
+impl From<&Rational<'_>> for f64 {
+    fn from(i: &Rational) -> f64 {
+        sexp_flonum_value(i.sexp)
     }
 }
 
 impl<'a> fmt::Debug for Rational<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let f: f64 = sexp_flonum_value((self.0).0);
-        fmt.write_fmt(format_args!("{}", f))
+        fmt.write_fmt(format_args!("{}", f64::from(self)))
     }
 }
 
-impl<'a> PartialEq for Rational<'a> {
-    fn eq(self: &Self, rhs: &Self) -> bool {
-        sexp_flonum_value((&self.0).0) as f64 == sexp_flonum_value((&rhs.0).0) as f64
-    }
-}
-
+#[derive(SExp)]
 pub struct Exception<'a>(RawSExp<'a>);
+
+impl Exception<'_> {
+    fn message(&self) -> String {
+        String(RawSExp {
+            sexp: sexp_exception_message(self.sexp),
+            context: self.context,
+        })
+    }
+}
 
 impl<'a> fmt::Debug for Exception<'a> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        let message_string = String((self.0).1.unwrap().exception_message(&self.0));
-        fmt.write_fmt(format_args!("Exception: {:?}", message_string))
+        fmt.write_fmt(format_args!("error: {:?}", self.message()))
     }
 }
 
-struct RawContext(sexp);
+pub struct Context(sexp);
 
-impl RawContext {
-    fn unbox_character(a: &RawSExp) -> char {
-        (sexp_unbox_character(a.0) as u8) as char
-    }
-
-    fn unbox_fixnum(a: &RawSExp) -> i64 {
-        (sexp_unbox_fixnum(a.0) as u8) as i64
-    }
-
-    fn make_flonum(&self, i: f64) -> RawSExp {
-        let flonum = unsafe { sexp_make_flonum(self.0, i) };
-        RawSExp(flonum, Some(self))
-    }
-
-    fn string_data<'a>(a: &'a RawSExp) -> &'a ffi::CStr {
-        let len = RawContext::string_size(a) + 1;
-        let slice = unsafe { slice::from_raw_parts(sexp_string_data(a.0) as _, len) };
-        unsafe { ffi::CStr::from_bytes_with_nul_unchecked(slice) }
-    }
-
-    fn exception_message(&self, a: &RawSExp) -> RawSExp {
-        RawSExp(sexp_exception_message(a.0), Some(self))
-    }
-
-    fn string_size(a: &RawSExp) -> usize {
-        sexp_string_size(a.0) as usize
-    }
-    fn equalp(&self, a: &RawSExp, b: &RawSExp) -> bool {
-        RawContext::truep(&RawSExp(sexp_equalp(self.0, a.0, b.0), Some(self)))
-    }
-
-    fn cons(&self, a: &RawSExp, b: &RawSExp) -> RawSExp {
-        RawSExp(sexp_cons(self.0, a.0, b.0), Some(self))
-    }
-
-    fn listp(&self, a: &RawSExp) -> bool {
-        RawContext::truep(&RawSExp(sexp_listp(self.0, a.0), Some(self)))
-    }
-
-    fn car<'a, 'b>(sexp: &'a RawSExp<'b>) -> RawSExp<'b> {
-        RawSExp(sexp_car(sexp.0), sexp.1)
-    }
-
-    fn cdr<'a, 'b>(sexp: &'a RawSExp<'b>) -> RawSExp<'b> {
-        RawSExp(sexp_cdr(sexp.0), sexp.1)
-    }
-
-    fn booleanp(sexp: &RawSExp) -> bool {
-        sexp_booleanp(sexp.0)
-    }
-
-    fn charp(sexp: &RawSExp) -> bool {
-        sexp_charp(sexp.0)
-    }
-
-    fn integerp(sexp: &RawSExp) -> bool {
-        sexp_integerp(sexp.0)
-    }
-
-    fn flonump(sexp: &RawSExp) -> bool {
-        sexp_flonump(sexp.0)
-    }
-
-    fn stringp(sexp: &RawSExp) -> bool {
-        sexp_stringp(sexp.0)
-    }
-
-    fn pointerp(sexp: &RawSExp) -> bool {
-        sexp_pointerp(sexp.0)
-    }
-
-    fn truep(sexp: &RawSExp) -> bool {
-        sexp_truep(sexp.0)
-    }
-
-    fn not(sexp: &RawSExp) -> bool {
-        sexp_not(sexp.0)
-    }
-
-    fn nullp(sexp: &RawSExp) -> bool {
-        sexp_nullp(sexp.0)
-    }
-
-    fn pairp(sexp: &RawSExp) -> bool {
-        sexp_pairp(sexp.0)
-    }
-
-    fn symbolp(sexp: &RawSExp) -> bool {
-        sexp_isymbolp(sexp.0) || sexp_lsymbolp(sexp.0)
-    }
-
-    fn exceptionp(sexp: &RawSExp) -> bool {
-        sexp_exceptionp(sexp.0)
-    }
-
-    fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<RawSExp, ffi::NulError> {
-        let string = ffi::CString::new(t.into())?;
-        Ok(RawSExp(
-            unsafe { sexp_eval_string(self.0, string.as_ptr(), -1, ptr::null_mut()) },
-            Some(self),
-        ))
-    }
-
-    fn symbol_to_string(&self, sexp: &RawSExp) -> String {
-        String(RawSExp(sexp_symbol_to_string(self.0, sexp.0), Some(self)))
-    }
-}
-
-pub struct Context(RawContext);
-
-impl<'a> Into<SExp<'a>> for RawSExp<'a> {
+impl<'a> From<RawSExp<'a>> for SExp<'a> {
     //is the 'static lifetime not the bottom?
-    fn into(self: Self) -> SExp<'a> {
-        let coprod = if RawContext::booleanp(&self) {
-            Coprod::inject(Bool(RawSExp(self.0, None)))
-        } else if RawContext::charp(&self) {
-            Coprod::inject(Char(RawSExp(self.0, None)))
-        } else if RawContext::nullp(&self) {
-            Coprod::inject(NULL)
-        } else if RawContext::pairp(&self) {
-            Coprod::inject(Pair(self))
-        } else if RawContext::stringp(&self) {
-            Coprod::inject(String(self))
-        } else if RawContext::integerp(&self) {
-            Coprod::inject(Integer(RawSExp(self.0, None)))
-        } else if RawContext::flonump(&self) {
-            Coprod::inject(Rational(self))
-        } else if RawContext::symbolp(&self) {
-            Coprod::inject(Symbol(self))
-        } else if RawContext::exceptionp(&self) {
-            Coprod::inject(Exception(self))
+    fn from(sexp: RawSExp<'a>) -> SExp<'a> {
+        if sexp_booleanp(sexp.sexp) {
+            if sexp_truep(sexp.sexp) {
+                TRUE.into()
+            } else {
+                FALSE.into()
+            }
+        } else if sexp.sexp == SEXP_VOID {
+            NULL.into()
+        } else if sexp_charp(sexp.sexp) {
+            Char(RawSExp::new(sexp.sexp)).into()
+        } else if sexp_nullp(sexp.sexp) {
+            NULL.into()
+        } else if sexp_integerp(sexp.sexp) {
+            Integer(RawSExp::new(sexp.sexp)).into()
+        } else if sexp_pairp(sexp.sexp) {
+            Pair(sexp).into()
+        } else if sexp_stringp(sexp.sexp) {
+            String(sexp).into()
+        } else if sexp_flonump(sexp.sexp) {
+            Rational(sexp).into()
+        } else if sexp_symbolp(sexp.sexp) {
+            Symbol(sexp).into()
+        } else if sexp_exceptionp(sexp.sexp) {
+            Exception(sexp).into()
         } else {
-            unreachable!()
-        };
-        SExp(coprod)
+            unimplemented!()
+            // panic!("Unexpacted type {:?}", sexp_pointer_tag(sexp.sexp))
+        }
     }
 }
 
 impl Default for Context {
     fn default() -> Self {
-        Context(RawContext::default())
-    }
-}
-
-impl Context {
-    pub fn eval_string<T: Into<string::String>>(&self, t: T) -> Result<SExp, ffi::NulError> {
-        self.0.eval_string(t).map(|x| x.into())
-    }
-    //The problem
-    fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> Pair {
-        let f = frunk::hlist![
-            |b: &'a Bool| &b.0,
-            |c: &'a Char| &c.0,
-            |i: &'a Integer| &i.0,
-            |i: &'a Rational<'a>| &i.0,
-            |n: &'a Null| &n.0,
-            |p: &'a Pair<'a>| &p.0,
-            |s: &'a String<'a>| &s.0,
-            |s: &'a Exception<'a>| &s.0,
-            |s: &'a Symbol<'a>| &s.0
-        ];
-
-        let sexp: SExp = self
-            .0
-            .cons(a.0.to_ref().fold(f), b.0.to_ref().fold(f))
-            .into();
-        sexp.expect::<Pair, _>().unwrap()
-    }
-
-    // TODO: Lens please
-    pub fn listp<'a>(&self, pair: &'a Pair) -> bool {
-        self.0.listp(&pair.0)
-    }
-
-    pub fn make_flonum(&self, i: f64) -> Rational {
-        Rational(self.0.make_flonum(i))
-    }
-}
-
-impl Default for RawContext {
-    fn default() -> Self {
-        RawContext(unsafe {
+        //TODO: switch to different default
+        Context(unsafe {
             sexp_make_eval_context(ptr::null_mut(), ptr::null_mut(), ptr::null_mut(), 0, 0)
         })
     }
 }
 
-impl Drop for RawContext {
+impl Drop for Context {
     fn drop(&mut self) {
         unsafe { sexp_destroy_context(self.0) };
+    }
+}
+
+impl Context {
+    pub fn eval_string(&self, str: &str) -> Result<SExp, Exception> {
+        let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
+        let sexp = RawSExp {
+            sexp: unsafe {
+                sexp_eval_string(self.0, c_str.as_ptr(), str.len() as _, ptr::null_mut())
+            },
+            context: Some(self),
+        };
+        if sexp_exceptionp(sexp.sexp) {
+            Err(Exception(sexp).into())
+        } else {
+            Ok(sexp.into())
+        }
+    }
+
+    //TODO: Return env
+    pub fn standard_env(&mut self) -> Result<(), Exception> {
+        let sexp = unsafe { sexp_load_standard_env(self.0, ptr::null_mut(), SEXP_SEVEN) };
+        if sexp_exceptionp(sexp) {
+            let raw_sexp = RawSExp {
+                sexp: sexp,
+                context: Some(self),
+            };
+            Err(Exception(raw_sexp).into())
+        } else {
+            Ok(())
+        }
+    }
+    pub fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> SExp {
+        let sexp = RawSExp {
+            sexp: sexp_cons(self.0, a.sexp, b.sexp),
+            context: Some(self),
+        };
+        if !sexp_exceptionp(sexp.sexp) {
+            Pair(sexp).into()
+        } else {
+            Exception(sexp).into()
+        }
+    }
+
+    pub fn flonum(&self, i: f64) -> Rational {
+        let sexp = unsafe { sexp_make_flonum(self.0, i) };
+        Rational(RawSExp {
+            sexp: sexp,
+            context: Some(self),
+        })
+    }
+
+    pub fn string(&self, str: &str) -> String {
+        let len = str.len();
+        let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
+        let sexp = unsafe { sexp_c_string(self.0, c_str.as_ptr(), len as _) };
+        String(RawSExp {
+            sexp: sexp,
+            context: Some(self),
+        })
+    }
+
+    pub fn intern(&self, str: &str) -> Symbol {
+        let len = str.len();
+        let c_str = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(str.as_bytes()) };
+        let sexp = unsafe { sexp_intern(self.0, c_str.as_ptr(), len as _) };
+        Symbol(RawSExp {
+            sexp: sexp,
+            context: Some(self),
+        })
     }
 }
 
 mod tests {
 
     use crate::sexp::*;
-    use crate::*;
-    use std::ffi;
 
     #[test]
     fn test_pair() {
         let context = Context::default();
         assert_eq!(
-            Some(context.cons(&SExp::from(Char::from('c')), &SExp::from(Bool::FALSE))),
-            context
-                .eval_string("'(#\\c . #f)")
-                .unwrap()
-                .expect::<Pair, _>()
+            Ok(context.cons(&Char::from('c' as raw::c_char).into(), &FALSE.into())),
+            context.eval_string("'(#\\c . #f)")
         );
 
         assert_eq!(
@@ -583,121 +469,80 @@ mod tests {
             "(\"x\" . 1)",
             format!("{:?}", context.eval_string("'(x . 1)").unwrap())
         );
-
-        // We now require generic serialization
-        // frunnk has a labelled generic (with a Repr)
-        // we need to take the repr, and transform field names into symbols and values into values
-        // first let's just write the methods
-        let pair_struct_string = "'((x . 1) (y . 2))";
-        let pair_struct = context
-            .eval_string(pair_struct_string)
-            .unwrap()
-            .expect::<Pair, _>()
-            .unwrap();
-        let pair_x = pair_struct.car().expect::<Pair, _>().unwrap();
-        let x_symbol = pair_x.car().expect::<Symbol, _>().unwrap();
-        let x_value = pair_x.cdr().expect::<Integer, _>().unwrap();
-        let pair_y = pair_struct.cdr().expect::<Pair, _>().unwrap();
-        let x_value_i64: i64 = x_value.into();
-        assert_eq!(x_value_i64, 1)
     }
 
     #[test]
     fn test_null() {
         let context = Context::default();
-        assert_eq!(
-            context.eval_string("'()").unwrap().0.take::<Null, _>(),
-            Some(NULL)
-        );
+        assert_eq!(context.eval_string("'()"), Ok(NULL.into()));
     }
 
     #[test]
     fn test_bool() {
         let context = Context::default();
-        assert_eq!(
-            context.eval_string("#t").unwrap().0.take::<Bool, _>(),
-            Some(true.into())
-        );
-        assert_eq!(
-            context.eval_string("#f").unwrap().expect::<Bool, _>(),
-            Some(false.into())
-        );
-        assert_eq!(context.eval_string("#t").unwrap().expect::<Char, _>(), None);
+        assert_eq!(context.eval_string("#t"), Ok(TRUE.into()));
+        assert_eq!(context.eval_string("#f"), Ok(FALSE.into()));
     }
 
     #[test]
     fn test_char() {
         let context = Context::default();
         assert_eq!(
-            context.eval_string("#\\s").unwrap().expect::<Bool, _>(),
-            None
+            context.eval_string("#\\h"),
+            Ok(Char::from('h' as raw::c_char).into())
         );
-        assert_eq!(
-            context.eval_string("#\\h").unwrap().expect::<Char, _>(),
-            Some('h'.into())
-        )
     }
 
     #[test]
     fn test_integer() {
         let context = Context::default();
+        assert_eq!(context.eval_string("(+ 1 3)"), Ok(Integer::from(4).into()));
+
         assert_eq!(
-            context.eval_string("#\\s").unwrap().expect::<Integer, _>(),
-            None
-        );
-        assert_eq!(
-            context
-                .eval_string("(+ 1 3)")
-                .unwrap()
-                .expect::<Integer, _>(),
-            Some(4.into())
+            context.eval_string(&SEXP_MAX_FIXNUM.to_string()),
+            Ok(Integer::from(SEXP_MAX_FIXNUM).into())
         );
 
-        // let max_value = "9223372036854775807";
-        let max_value = u32::max_value().to_string();
-        println!("Max value: {:}", max_value);
         assert_eq!(
-            context
-                .eval_string(max_value)
-                .unwrap()
-                .expect::<Integer, _>(),
-            Some(i64::max_value().into())
-        )
+            context.eval_string(&SEXP_MIN_FIXNUM.to_string()),
+            Ok(Integer::from(SEXP_MIN_FIXNUM).into())
+        );
     }
 
-    // TODO: What are the constraints of the system?
     #[test]
     fn test_rational() {
         let context = Context::default();
         assert_eq!("4.5", format!("{:?}", context.eval_string("4.5").unwrap()));
-
-        context.make_flonum(4.5);
+        assert_eq!(context.eval_string("4.5"), Ok(context.flonum(4.5).into()));
     }
 
     #[test]
     fn test_string() {
         let context = Context::default();
-        let foo = context
-            .eval_string("\"foo\"")
-            .unwrap()
-            .expect::<String, _>();
-
-        let bar = context
-            .eval_string("\"bar\"")
-            .unwrap()
-            .expect::<String, _>();
-        assert_eq!(foo, foo);
-        assert_ne!(foo, bar);
-        assert_eq!("\"foo\"", format!("{:?}", foo.unwrap().data()));
+        assert_eq!(
+            Ok(context.string("foo").into()),
+            context.eval_string("\"foo\"")
+        );
     }
 
     #[test]
     fn test_symbol() {
         let context = Context::default();
-        let foo = context.eval_string("'foo").unwrap().expect::<Symbol, _>();
-
-        let bar = context.eval_string("'bar").unwrap().expect::<Symbol, _>();
-        assert_eq!(foo, foo);
-        assert_ne!(foo, bar);
+        assert_eq!(
+            Ok(context.intern("foo").into()),
+            context.eval_string("'foo")
+        );
     }
+
+    #[test]
+    fn test_standard_env() {
+        let mut context = Context::default();
+        context.standard_env().unwrap();
+        context.eval_string("(import (srfi 1))").unwrap();
+        assert_eq!(
+            Ok(Integer::from(1).into()),
+            context.eval_string("(first '(1 2))")
+        );
+    }
+
 }

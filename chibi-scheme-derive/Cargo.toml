@@ -1,0 +1,12 @@
+[package]
+name = "chibi-scheme-derive"
+version = "0.1.0"
+authors = ["Yilin <yilin.wei10@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+quote = "0.6"
+syn = "0.15"
+
+[lib]
+proc-macro=true
