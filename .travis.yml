@@ -3,10 +3,5 @@ rust:
   - stable
   - nightly
 script:
-  - |
-    git clone --depth=100 --single-branch https://github.com/ashinn/chibi-scheme
-    cd chibi-scheme
-    git checkout tags/0.8
-    sudo make install
   - cargo build 2>/dev/null
   - cargo test

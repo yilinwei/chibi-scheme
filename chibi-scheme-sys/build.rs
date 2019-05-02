@@ -17,8 +17,7 @@ fn checkout(dir: &Path, tag: &str) -> io::Result<()> {
 
     let status = Command::new("git")
         .current_dir(dir.join("chibi-scheme"))
-        .arg("checkout")
-        .arg(format!("tags/{}", tag))
+        .arg("pull")
         .status()?;
 
     if status.success() {
@@ -29,9 +28,28 @@ fn checkout(dir: &Path, tag: &str) -> io::Result<()> {
 }
 
 fn make(dir: &Path) -> io::Result<()> {
-    let status = Command::new("make")
-        .current_dir(dir.join("chibi-scheme"))
+    Command::new("make")
+        .current_dir(dir.clone().join("chibi-scheme"))
+        .arg("clean")
         .status()?;
+
+    Command::new("make")
+        .current_dir(dir.clone().join("chibi-scheme"))
+        .arg(format!("PREFIX={}/install", dir.clone().to_str().unwrap()))
+        .arg("uninstall")
+        .status()?;
+
+    Command::new("make")
+        .current_dir(dir.clone().join("chibi-scheme"))
+        .arg(format!("PREFIX={}/install", dir.clone().to_str().unwrap()))
+        .status()?;
+
+    let status = Command::new("make")
+        .current_dir(dir.clone().join("chibi-scheme"))
+        .arg(format!("PREFIX={}/install", dir.clone().to_str().unwrap()))
+        .arg("install")
+        .status()?;
+
     if status.success() {
         Ok(())
     } else {
