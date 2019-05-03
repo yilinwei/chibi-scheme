@@ -34,6 +34,7 @@ pub enum SExp<'a> {
     Pair(Pair<'a>),
     Exception(Exception<'a>),
     Void(Void),
+    Env(Env<'a>)
 }
 
 impl<'a> ops::Deref for SExp<'a> {
@@ -50,6 +51,7 @@ impl<'a> ops::Deref for SExp<'a> {
             SExp::Pair(p) => p,
             SExp::Exception(e) => e,
             SExp::Void(v) => v,
+            SExp::Env(e) => e
         }
     }
 }
@@ -67,6 +69,7 @@ impl<'a> fmt::Debug for SExp<'a> {
             SExp::Rational(r) => r.fmt(fmt),
             SExp::Symbol(s) => s.fmt(fmt),
             SExp::Void(v) => v.fmt(fmt),
+            SExp::Env(e) => e.fmt(fmt)
         }
     }
 }
@@ -320,6 +323,15 @@ impl<'a> fmt::Debug for Exception<'a> {
     }
 }
 
+#[derive(SExp)]
+pub struct Env<'a>(RawSExp<'a>);
+
+impl<'a> fmt::Debug for Env<'a> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt.write_str("")
+    }
+}
+
 pub struct Context(sexp);
 
 impl<'a> From<RawSExp<'a>> for SExp<'a> {
@@ -349,6 +361,8 @@ impl<'a> From<RawSExp<'a>> for SExp<'a> {
             Symbol(sexp).into()
         } else if sexp_exceptionp(sexp.sexp) {
             Exception(sexp).into()
+        } else if sexp_envp(sexp.sexp) {
+            Env(sexp).into()
         } else {
             unimplemented!()
             // panic!("Unexpacted type {:?}", sexp_pointer_tag(sexp.sexp))
@@ -387,17 +401,15 @@ impl Context {
         }
     }
 
-    //TODO: Return env
-    pub fn standard_env(&mut self) -> Result<(), Exception> {
-        let sexp = unsafe { sexp_load_standard_env(self.0, ptr::null_mut(), SEXP_SEVEN) };
-        if sexp_exceptionp(sexp) {
-            let raw_sexp = RawSExp {
-                sexp: sexp,
-                context: Some(self),
-            };
-            Err(Exception(raw_sexp).into())
+    pub fn standard_env(&mut self) -> Result<Env, Exception> {
+        let sexp = RawSExp {
+            sexp: unsafe { sexp_load_standard_env(self.0, ptr::null_mut(), SEXP_SEVEN) },
+            context: Some(self),
+        };
+        if sexp_exceptionp(sexp.sexp) {
+            Err(Exception(sexp).into())
         } else {
-            Ok(())
+            Ok(Env(sexp))
         }
     }
     pub fn cons<'a>(&self, a: &'a SExp, b: &'a SExp) -> SExp {
