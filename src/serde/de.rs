@@ -12,405 +12,497 @@ pub struct Deserializer<'c> {
     input: SExp<'c>,
 }
 
-// impl Deserializer<'_> {
-//     fn expect_bool(&self) -> Result<bool> {
-//         self.input
-//             .expect_ref::<Bool, _>()
-//             .ok_or(Error::ExpectedBoolean(format!("{:?}", self.input)))
-//             .map(|b| b.into())
-//     }
+impl<'de> Deserializer<'de> {
+    fn deserialize_integer<V>(&self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        match &self.input {
+            SExp::Integer(i) => visitor.visit_i64(i.into()),
+            o => Err(Error::ExpectedInteger(format!("{:?}", o))),
+        }
+    }
 
-//     fn try_from_integer<E: Into<TryFromIntError>, I: TryFrom<i32, Error = E>>(i: &Integer) -> Result<I> {
-//         I::try_from(i32::from(i)).map_err(|e| Error::IntegerTooLargeForBytes(e.into()))
-//     }
+    fn deserialize_rational<V>(&self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        match &self.input {
+            SExp::Rational(i) => visitor.visit_f64(i.into()),
+            o => Err(Error::ExpectedRational(format!("{:?}", o))),
+        }
+    }
 
-//     fn expect_integer(&self) -> Result<&Integer> {
-//         self.input
-//             .expect_ref::<Integer, _>()
-//             .ok_or(Error::ExpectedInteger)
-//     }
+    fn deserialize_char<V>(&self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+        // match &self.input {
+        //     SExp::Char(c) => visitor.visit_char(c.into() as char),
+        //     o => Err(Error::ExpectedChar(format!("{:?}", o))),
+        // }
+    }
 
-//     fn expect_i<E: Into<TryFromIntError>, I: TryFrom<i32, Error = E>>(&self) -> Result<I> {
-//         self.expect_integer()
-//             .and_then(|i| Deserializer::try_from_integer(i))
-//     }
+    fn deserialize_sstring<V>(&self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        match &self.input {
+            SExp::String(s) => visitor.visit_string(s.into()),
+            o => Err(Error::ExpectedString(format!("{:?}", o))),
+        }
+    }
 
-//     fn expect_rational<I: From<f32>>(&self) -> Result<I> {
-//         self.input
-//             .expect_ref::<Rational, _>()
-//             .ok_or(Error::ExpectedRational)
-//             .map(|i| I::from(f32::from(i)))
-//     }
+    fn deserialize_symbol<V>(&self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        match &self.input {
+            SExp::Symbol(s) => {
+                let sstring = String::from(s);
+                // Something to do with deref?
+                visitor.visit_string((&sstring).into())
+            }
 
-//     fn expect_symbol(&self) -> Result<&Symbol> {
-//         self
-//             .input
-//             .expect_ref::<Symbol, _>()
-//             .ok_or(Error::ExpectedSymbol)
-//     }
-//     fn expect_char(&self) -> Result<char> {
-//         self
-//             .input
-//             .expect_ref::<Char, _>()
-//             .ok_or(Error::ExpectedChar)
-//             .map(|c| char::from(c))
-//     }
-// }
+            o => Err(Error::ExpectedSymbol(format!("{:?}", o))),
+        }
+    }
+}
 
-// impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
-//     type Error = Error;
+impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
+    type Error = Error;
 
-//     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
+    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        Err(Error::DeserializeAnyNotSupported)
+    }
 
-//     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_bool(self.expect_bool()?)
-//     }
+    fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: serde::de::Visitor<'de>,
+    {
+        Err(Error::DeserializeIgnoredAnyNotSupported)
+    }
 
-//     fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_i8(self.expect_i::<_, i8>()?)
-//     }
+    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        match &self.input {
+            SExp::Bool(b) => visitor.visit_bool(b.into()),
+            o => Err(Error::ExpectedBoolean(format!("{:?}", o))),
+        }
+    }
 
-//     fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_i16(self.expect_i::<_, i16>()?)
-//     }
+    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_i32(self.expect_i::<_, i32>()?)
-//     }
+    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!("bignums")
-//     }
+    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_u8(self.expect_i::<_, u8>()?)
-//     }
+    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_u16(self.expect_i::<_, u16>()?)
-//     }
+    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_u32(self.expect_i::<_, u32>()?)
-//     }
+    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!("bignums")
-//     }
+    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     // Float parsing is stupidly hard.
-//     fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_f32(self.expect_rational::<f32>()?)
-//     }
+    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_integer(visitor)
+    }
 
-//     // Float parsing is stupidly hard.
-//     fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_f64(self.expect_rational::<f64>()?)
-//     }
-//     fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_char(self.expect_char()?)
-//     }
+    // Float parsing is stupidly hard.
+    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_rational(visitor)
+    }
 
-//     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
+    // Float parsing is stupidly hard.
+    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_rational(visitor)
+    }
+    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        // TODO: Need to go from a c char to a char
+        unimplemented!()
+    }
 
-//     fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     // arrays as JSON arrays of bytes. Handle that representation here.
-//     fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
+    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_sstring(visitor)
+    }
 
-//     fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
+    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_sstring(visitor)
+    }
+    // arrays as JSON arrays of bytes. Handle that representation here.
+    fn deserialize_bytes<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
 
-//     // In Serde, unit means an anonymous value containing no data.
-//     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
+    fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
 
-//     // Tuple structs look just like sequences in JSON.
-//     fn deserialize_tuple_struct<V>(
-//         self,
-//         _name: &'static str,
-//         _len: usize,
-//         visitor: V,
-//     ) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_struct<V>(
-//         self,
-//         _name: &'static str,
-//         _fields: &'static [&'static str],
-//         visitor: V,
-//     ) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         let assoc_list = AssocList { de: self };
-//         visitor.visit_map(assoc_list)
-//     }
-//     fn deserialize_enum<V>(
-//         self,
-//         _name: &'static str,
-//         _variants: &'static [&'static str],
-//         visitor: V,
-//     ) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         unimplemented!()
-//     }
-//     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         visitor.visit_string(self.expect_symbol()?.to_string())
-//     }
+    // In Serde, unit means an anonymous value containing no data.
+    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_seq<V>(mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
 
-//     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value>
-//     where
-//         V: Visitor<'de>,
-//     {
-//         // TODO: There must be a better way of doing this
-//         let cell = cell::RefCell::new(Some(visitor));
-//         let r: Result<V::Value> = self.input.0.to_ref().fold(frunk::hlist![
-//             |b: &Bool| (&mut cell.borrow_mut()).take().unwrap().visit_bool(b.into()),
-//             |c: &Char| (&mut cell.borrow_mut()).take().unwrap().visit_char(char::from(c)),
-//             |i: &Integer|  (&mut cell.borrow_mut()).take().unwrap().visit_i32(i32::from(i)),
-//             |i: &Rational| (&mut cell.borrow_mut()).take().unwrap().visit_f32(f32::from(i)),
-//             |n: &Null| unimplemented!(),
-//             |p: &Pair<'a>| unimplemented!(),
-//             |s: &String<'a>| unimplemented!(),
-//             |s: &Exception<'a>| unimplemented!(),
-//             |s: &Symbol<'a>| unimplemented!()
-//         ]);
-//         unimplemented!()
-//     }
-// }
+    // Tuple structs look just like sequences in JSON.
+    fn deserialize_tuple_struct<V>(
+        self,
+        _name: &'static str,
+        _len: usize,
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_map<V>(mut self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_struct<V>(
+        self,
+        _name: &'static str,
+        _fields: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        let assoc_list = AssocList { de: self };
+        visitor.visit_map(assoc_list)
+    }
+    fn deserialize_enum<V>(
+        self,
+        _name: &'static str,
+        _variants: &'static [&'static str],
+        visitor: V,
+    ) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        unimplemented!()
+    }
+    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value>
+    where
+        V: Visitor<'de>,
+    {
+        self.deserialize_symbol(visitor)
+    }
+}
 
-// struct AssocList<'a, 'de> {
-//     de: &'a mut Deserializer<'de>,
-// }
+struct AssocList<'a, 'de> {
+    de: &'a mut Deserializer<'de>,
+}
 
-// impl<'a, 'de> MapAccess<'de> for AssocList<'a, 'de> {
-//     type Error = Error;
+impl<'a, 'de> MapAccess<'de> for AssocList<'a, 'de> {
+    type Error = Error;
 
-//     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
-//     where
-//         K: DeserializeSeed<'de>,
-//     {
-//         let maybe_pair = self
-//             .de
-//             .input
-//             .expect_ref::<Pair, _>()
-//             .map(|p| Some(p))
-//             .ok_or(Error::ExpectedPair)
-//             .or(self
-//                 .de
-//                 .input
-//                 .expect_ref::<Null, _>()
-//                 .map(|_| None)
-//                 .ok_or(Error::ExpectedEndOfAssocList))?;
-//         match maybe_pair {
-//             Some(pair) => {
-//                 let head = pair.car();
-//                 let head_pair = head.expect_ref::<Pair, _>().ok_or(Error::ExpectedPair)?;
-//                 let symbol = head_pair.car();
-//                 let mut new_de = Deserializer { input: symbol };
-//                 seed.deserialize(&mut new_de).map(Some)
-//             }
-//             None => Ok(None),
-//         }
-//     }
-//     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
-//     where
-//         V: DeserializeSeed<'de>,
-//     {
-//         let pair = self
-//             .de
-//             .input
-//             .expect_ref::<Pair, _>()
-//             .ok_or(Error::ExpectedPair)?;
-//         let head = pair.car();
-//         let head_pair = head.expect_ref::<Pair, _>().ok_or(Error::ExpectedPair)?;
-//         let value = head_pair.cdr();
-//         let mut new_de = Deserializer { input: value };
-//         let r = seed.deserialize(&mut new_de);
-//         // Move the deserializer forwards
-//         self.de.input = pair.cdr();
-//         r
-//     }
-// }
+    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>>
+    where
+        K: DeserializeSeed<'de>,
+    {
+        let pair_or_end = match &self.de.input {
+            SExp::Pair(p) => Ok(Some(p)),
+            SExp::Null(_) => Ok(None),
+            o => Err(Error::ExpectedPairOrEndOfAssocList(format!("{:?}", o))),
+        }?;
+
+        match pair_or_end {
+            Some(pair) => {
+                let head = pair.car();
+                match head {
+                    SExp::Pair(kv_pair) => {
+                        let symbol = kv_pair.car();
+                        let mut new_de = Deserializer { input: symbol };
+                        seed.deserialize(&mut new_de).map(Some)
+                    }
+                    o => Err(Error::ExpectedPair(format!("{:?}", o))),
+                }
+            }
+            None => Ok(None),
+        }
+    }
+    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value>
+    where
+        V: DeserializeSeed<'de>,
+    {
+        let pair = match &self.de.input {
+            SExp::Pair(p) => Ok(p),
+            o => Err(Error::ExpectedPairOrEndOfAssocList(format!("{:?}", o))),
+        }?;
+
+        let head = pair.car();
+        match head {
+            SExp::Pair(kv_pair) => {
+                let value = kv_pair.cdr();
+                let mut new_de = Deserializer { input: value };
+                let r = seed.deserialize(&mut new_de);
+                // // Move the deserializer forwards
+                self.de.input = pair.cdr();
+                r
+            }
+            o => Err(Error::ExpectedPair(format!("{:?}", o))),
+        }
+    }
+}
 
 pub fn from_sexp<'a, T>(s: SExp<'a>) -> Result<T>
 where
     T: Deserialize<'a>,
 {
     let mut deserializer = Deserializer { input: s };
-    unimplemented!()
+    T::deserialize(&mut deserializer)
 }
 
-// #[test]
-// fn test_bool() {
-//     let c = SExp::from(Bool::TRUE);
-//     let expected = true;
-//     assert_eq!(expected, from_sexp(c).unwrap());
-// }
+mod tests {
 
-// #[test]
-// fn test_struct() {
-//     #[derive(Deserialize, PartialEq, Debug)]
-//     struct Foo {
-//         bar: bool,
-//         foo: i32,
-//         baz: f64,
-//     }
+    use crate::serde::de;
+    use crate::sexp;
+    use crate::sexp::{Context, Integer, Rational, SExp};
+    use chibi_scheme_sys;
+    use serde::Deserialize;
+    use std::cmp::PartialEq;
+    use std::fmt::Debug;
+    use std::i32;
+    use std::i64;
 
-//     let context = Context::default();
-//     let foo = context
-//         .eval_string("'((foo . 3) (bar . #f) (baz . 5.5))")
-//         .unwrap();
-//     let expected = Foo {
-//         bar: false,
-//         foo: 3,
-//         baz: 5.5,
-//     };
-//     assert_eq!(expected, from_sexp(foo).unwrap());
-// }
+    #[test]
+    fn test_deserialize_bool() {
+        let mut assertions: Vec<(SExp, bool)> = vec![
+            (SExp::from(sexp::FALSE), false),
+            (SExp::from(sexp::TRUE), true),
+        ];
+        assert_all(&mut assertions)
+    }
 
-// #[test]
-// fn test_position_struct() {
-//     #[derive(Deserialize, PartialEq, Debug)]
-//     struct Position {
-//         x: f64,
-//         y: f64,
-//         z: f64,
-//     }
+    #[test]
+    fn test_deserialize_i64() {
+        let mut assertions: Vec<(SExp, i64)> = vec![
+            (SExp::from(Integer::from(1)), 1),
+            (SExp::from(Integer::from(0)), 0),
+            (SExp::from(Integer::from(-1)), -1),
+            (SExp::from(Integer::from(i32::MAX as i64)), i32::MAX as i64),
+            (
+                SExp::from(Integer::from(chibi_scheme_sys::SEXP_MAX_FIXNUM)),
+                chibi_scheme_sys::SEXP_MAX_FIXNUM,
+            ),
+        ];
+        assert_all(&mut assertions)
+    }
 
-//     let context = Context::default();
-//     let foo = context
-//         .eval_string("'((x . 1.0) (y . 1.0) (z . 1.0))")
-//         .unwrap();
-//     let expected = Position {
-//         x: 1.0,
-//         y: 1.0,
-//         z: 1.0,
-//     };
-//     assert_eq!(expected, from_sexp(foo).unwrap());
-// }
+    #[test]
+    fn test_deserialize_i32() {
+        let mut assertions: Vec<(SExp, i32)> = vec![
+            (SExp::from(Integer::from(1)), 1),
+            (SExp::from(Integer::from(0)), 0),
+            (SExp::from(Integer::from(-1)), -1),
+            (SExp::from(Integer::from(i32::MAX as i64)), i32::MAX),
+        ];
+        assert_all(&mut assertions)
+    }
 
-// #[test]
-// fn test_casting() {
-//     assert_eq!(1 as i8, 1);
-//     let x: i64 = 12312324;
-//     assert_eq!(x as i8, 4);
-// }
+    #[test]
+    fn test_deserialize_f64() {
+        let context = Context::default();
+        let mut assertions: Vec<(SExp, f64)> = vec![
+            (SExp::from(context.flonum(1.0)), 1.0),
+            (SExp::from(context.flonum(0.0)), 0.0),
+            (SExp::from(context.flonum(-1.5)), -1.5),
+        ];
+        assert_all(&mut assertions)
+    }
 
-// #[test]
-// fn test_expected_boolean() {
-//     let c = SExp::from(Integer::from(12));
-//     let expected = true;
-//     assert_eq!(
-//         Some(Error::ExpectedBoolean("12".to_string())),
-//         from_sexp::<bool>(c).err()
-//     );
-// }
+    #[test]
+    fn test_deserialize_f32() {
+        let context = Context::default();
+        let mut assertions: Vec<(SExp, f32)> = vec![
+            (SExp::from(context.flonum(1.0)), 1.0),
+            (SExp::from(context.flonum(0.0)), 0.0),
+            (SExp::from(context.flonum(-1.5)), -1.5),
+        ];
+        assert_all(&mut assertions)
+    }
+
+    #[test]
+    fn test_deserialize_string() {
+        let context = Context::default();
+        let mut assertions: Vec<(SExp, String)> = vec![
+            (SExp::from(context.string("a")), "a".to_string()),
+            (SExp::from(context.string("b")), "b".to_string()),
+            (SExp::from(context.string("c")), "c".to_string()),
+        ];
+        assert_all(&mut assertions)
+    }
+
+    #[test]
+    fn test_deserialize_struct() {
+        let context = Context::default();
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Foo {
+            bar: bool,
+            foo: i32,
+            baz: f64,
+        }
+
+        let context = Context::default();
+        let foo = context
+            .eval_string("'((foo . 3) (bar . #f) (baz . 5.5))")
+            .unwrap();
+        let expected = Foo {
+            bar: false,
+            foo: 3,
+            baz: 5.5,
+        };
+        assert_eq!(expected, de::from_sexp(foo).unwrap());
+    }
+
+    #[test]
+    fn test_deserialize_nested_struct() {
+        let context = Context::default();
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Foo {
+            bar: bool,
+            foo: i32,
+            baz: f64,
+        }
+
+        #[derive(Deserialize, PartialEq, Debug)]
+        struct Bar {
+            cow: bool,
+            qux: Foo,
+        }
+
+        let context = Context::default();
+        let bar = context
+            .eval_string("'( (cow . #t) ( qux . ((foo . 3) (bar . #f) (baz . 5.5)) ) )")
+            .unwrap();
+        let expected = Bar {
+            cow: true,
+            qux: Foo {
+                bar: false,
+                foo: 3,
+                baz: 5.5,
+            },
+        };
+        assert_eq!(expected, de::from_sexp(bar).unwrap());
+    }
+
+    fn assert_all<'a, T>(table: &mut Vec<(SExp<'a>, T)>)
+    where
+        T: Deserialize<'a>,
+        T: Debug,
+        T: PartialEq,
+    {
+        table.drain(..).for_each(|(sexp, expected)| {
+            let result = de::from_sexp::<T>(sexp);
+            assert!(
+                result.is_ok(),
+                "Expected {:?} but got error {:?}",
+                expected,
+                result.err()
+            );
+            assert_eq!(result.unwrap(), expected);
+        });
+    }
+}

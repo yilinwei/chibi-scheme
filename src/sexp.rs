@@ -6,6 +6,7 @@ use std::ops;
 use std::os::raw;
 use std::ptr;
 use std::slice;
+use std::string::String as RustString;
 
 pub struct RawSExp<'a> {
     sexp: sexp,
@@ -89,6 +90,12 @@ impl String<'_> {
 impl fmt::Debug for String<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         fmt.write_fmt(format_args!("\"{:?}\"", self.data()))
+    }
+}
+
+impl From<&String<'_>> for RustString {
+    fn from(s: &String) -> RustString {
+        RustString::from(s.data())
     }
 }
 
