@@ -1,4 +1,5 @@
 target/
+chibi-scheme-sys/install
 */target
 **/*.rs.bk
 *~

@@ -401,6 +401,7 @@ impl Context {
         }
     }
 
+
     pub fn standard_env(&mut self) -> Result<Env, Exception> {
         let sexp = RawSExp {
             sexp: unsafe { sexp_load_standard_env(self.0, ptr::null_mut(), SEXP_SEVEN) },
@@ -451,6 +452,22 @@ impl Context {
             context: Some(self),
         })
     }
+
+    pub fn define_foreign0(&self, env: &Env, name: &str, sexp_proc: unsafe extern fn(sexp, sexp, i64) -> sexp) -> sexp {
+	let c_name = unsafe { ffi::CStr::from_bytes_with_nul_unchecked(name.as_bytes()) };
+	let sexp = unsafe { sexp_define_foreign_aux(
+	    self.0,
+	    env.0.sexp,
+	    c_name.as_ptr(),
+	    0,
+	    0,
+	    ptr::null_mut(),
+	    Some(sexp_proc as _),
+	    ptr::null_mut()
+	) };
+	sexp
+    }
+
 }
 
 mod tests {
@@ -562,6 +579,23 @@ mod tests {
             Ok(Integer::from(1).into()),
             context.eval_string("(first '(1 2))")
         );
+    }
+
+    extern fn foo(ctx_sexp: sexp, proc: sexp, n: i64) -> sexp {
+	let context = Context(ctx_sexp);
+	let i: Integer = 42.into();
+	i.sexp
+    }
+
+    #[test]
+    fn test_foreign0() {
+	let context = Context::default();
+	let env = context.standard_env().unwrap();
+	context.define_foreign0(&env, "foo", foo);
+	assert_eq!(
+	    Ok(Integer::from(42).into()),
+	    context.eval_string("(foo)")
+	)
     }
 
 }
